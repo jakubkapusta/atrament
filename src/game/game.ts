@@ -228,6 +228,14 @@ export class Game {
     return { x: t.x, y: t.y - r * 0.92 - 0.02, r };
   }
 
+  /** Where the drop will actually be released: pulled towards the aim point so a lagging or
+   *  swinging pipette doesn't cost accuracy. */
+  releaseX() {
+    const r = this.current ? TIER_R[this.current.tier] : 0;
+    const x = this.hangPos().x * 0.3 + this.pip.tx * 0.7;
+    return clamp(x, r + 0.01, JAR_W - r - 0.01);
+  }
+
   canRelease() {
     return !this.over && !!this.current && this.pip.grow > 0.92 && this.pip.cooldown <= 0;
   }
@@ -235,9 +243,8 @@ export class Game {
   release() {
     if (!this.canRelease() || !this.current) return false;
     const h = this.hangPos();
-    const r = TIER_R[this.current.tier];
-    const d = this.makeDrop(this.current.ink, this.current.tier, clamp(h.x, r + 0.01, JAR_W - r - 0.01), h.y);
-    d.vx = this.pip.vx * 0.35;
+    const d = this.makeDrop(this.current.ink, this.current.tier, this.releaseX(), h.y);
+    d.vx = clamp(this.pip.vx * 0.03, -0.5, 0.5);
     d.vy = -1.2;
     d.a2x = -0.12; // released drop snaps from elongated
     d.a2vx = 2.5;
@@ -314,15 +321,17 @@ export class Game {
   private updatePipette(dt: number) {
     const p = this.pip;
     // critically damped follow of the pivot
-    const w = 16;
+    const w = 20;
     const ax = w * w * (p.tx - p.x) - 2 * w * p.vx;
     p.vx += ax * dt;
     p.x += p.vx * dt;
     // pendulum driven by pivot acceleration
     const g = 30;
-    const angA = (-g * Math.sin(p.ang) - ax * Math.cos(p.ang)) / PIP_LEN - 3.2 * p.angV;
+    // swing driven by 40% of the pivot acceleration, well damped — enough to feel alive,
+    // not enough to throw drops off target
+    const angA = (-g * Math.sin(p.ang) - 0.4 * ax * Math.cos(p.ang)) / PIP_LEN - 5 * p.angV;
     p.angV += angA * dt;
-    p.ang = clamp(p.ang + p.angV * dt, -0.5, 0.5);
+    p.ang = clamp(p.ang + p.angV * dt, -0.22, 0.22);
     p.squeeze = Math.max(0, p.squeeze - dt * 4);
     if (p.cooldown > 0) p.cooldown -= dt;
     else if (this.current && !this.over) p.grow = Math.min(1, p.grow + dt * 3.2);

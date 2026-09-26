@@ -520,7 +520,7 @@ export class Renderer {
     g.bind(this.sceneA);
     p.water.use().setAll({
       uBg: this.bg.tex, uDye: fl.dye.read.tex, uWave: this.waveTex,
-      uU2W: u2w, uW2U: w2u, uDyeMap: dyeMap, uAim: [hang.x, hang.y - hang.r, aimAlpha, 0],
+      uU2W: u2w, uW2U: w2u, uDyeMap: dyeMap, uAim: [game.releaseX(), hang.y - hang.r, aimAlpha, 0],
       uJar: jar, uMurkCol: murkCol, uDyeK: dyeK, uTime: t, uMurk: murk, uRayK: 0.16,
     });
     g.fullscreen();
