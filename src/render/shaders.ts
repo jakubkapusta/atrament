@@ -126,6 +126,7 @@ void main(){
     float depth = wl - w.y;
     col *= exp(-vec3(0.085, 0.028, 0.02) * (0.5 + chord * 2.4));
     vec4 dye = texture(uDye, w * uDyeMap.xy + uDyeMap.zw);
+    dye.rgb = 2.2 * (1.0 - exp(-dye.rgb / 2.2)); // soft cap: dense ink never goes pitch black
     float dyeAmt = dot(dye.rgb, vec3(0.3333));
     // caustics from the rippling surface — strongest on the floor
     float floorM = exp(-max(w.y, 0.0) * 1.3) * 0.8 + 0.15;
@@ -384,6 +385,7 @@ void main(){
   float wl = uJar.z + texture(uWave, vec2(w.x / uJar.x, 0.5)).r;
   if (w.y < wl && w.x > 0.0 && w.x < uJar.x) {
     vec4 dye = texture(uDye, w * uDyeMap.xy + uDyeMap.zw);
+    dye.rgb = 2.2 * (1.0 - exp(-dye.rgb / 2.2));
     col *= exp(-dye.rgb * uDyeK * uFront);
     float haze = 1.0 - exp(-(dye.a * 1.3 + uMurk * 1.6) * uFront);
     col = mix(col, uMurkCol * (0.3 + 0.7 * lum(col)), haze);

@@ -291,7 +291,8 @@ export class Renderer {
           const a = INKS[e.ink].absorb;
           const sp = Math.min(e.vy, 14);
           this.velSplat(e.x, WATER - 0.35 - e.r * 0.5, 0, -sp * 1.3, 0.22 + e.r * 0.25);
-          this.dyeSplat(e.x, WATER - 0.25, a, 1.1 + e.r * 1.0, 0.14 + e.r * 0.28, murky ? 0.1 : 0);
+          // total ink ∝ amt·r², so keep it roughly size-independent (big drops used to flood the jar)
+          this.dyeSplat(e.x, WATER - 0.25, a, 0.75, 0.14 + e.r * 0.18, murky ? 0.1 : 0);
           break;
         }
         case 'merge': {
@@ -305,7 +306,7 @@ export class Renderer {
             const x = e.x + Math.cos(ang) * R;
             const y = e.y + Math.sin(ang) * R;
             this.velSplat(x, y, -Math.sin(ang) * spin, Math.cos(ang) * spin, e.r * 0.5);
-            this.dyeSplat(x, y, i % 2 ? A : B, 0.32 + e.tier * 0.05, e.r * 0.38, murky ? 0.16 : 0);
+            this.dyeSplat(x, y, i % 2 ? A : B, 0.24 + e.tier * 0.015, Math.min(e.r * 0.3, 0.3), murky ? 0.16 : 0);
           }
           if (murky) this.dyeSplat(e.x, e.y, [0.2, 0.25, 0.3], 0.3, e.r * 1.4, 0.5 + e.tier * 0.05);
           if (e.kind === 'black') this.flash = Math.max(this.flash, 0.05);
@@ -317,12 +318,12 @@ export class Renderer {
         }
         case 'dissolve': {
           const a = INKS[e.ink].absorb;
-          const amt = e.ink === Ink.K ? 0.3 : 1.2;
-          this.dyeSplat(e.x, e.y, a, amt, e.r * 0.9, murky ? 0.12 : 0);
+          const amt = e.ink === Ink.K ? 0.25 : 0.7;
+          this.dyeSplat(e.x, e.y, a, amt, Math.min(e.r * 0.7, 0.7), murky ? 0.12 : 0);
           for (let i = 0; i < 4; i++) {
             const ang = (i / 4) * Math.PI * 2 + e.x;
             this.velSplat(e.x + Math.cos(ang) * e.r * 0.6, e.y + Math.sin(ang) * e.r * 0.6, Math.cos(ang) * 3 + e.vx, Math.sin(ang) * 3 + e.vy, e.r * 0.5);
-            this.dyeSplat(e.x + Math.cos(ang) * e.r * 0.8, e.y + Math.sin(ang) * e.r * 0.8, a, amt * 0.4, e.r * 0.4);
+            this.dyeSplat(e.x + Math.cos(ang) * e.r * 0.8, e.y + Math.sin(ang) * e.r * 0.8, a, amt * 0.35, Math.min(e.r * 0.35, 0.35));
           }
           break;
         }
@@ -466,7 +467,7 @@ export class Renderer {
 
     // --- fluid forcing from moving drops
     const fl = this.fluid;
-    fl.dissipation = murky ? 0.035 : 0.14;
+    fl.dissipation = murky ? 0.035 : 0.24;
     fl.dissipationA = murky ? 0.012 : 0.35;
     let budget = 20;
     for (const d of game.drops) {
@@ -477,7 +478,7 @@ export class Renderer {
       this.velSplat(d.x, d.y, d.vx * 0.55, d.vy * 0.55, d.r * 0.75);
       if (sp > 0.9 && d.y < WATER - 0.2) {
         const a = INKS[d.ink].absorb;
-        this.dyeSplat(d.x - d.vx * 0.06, d.y + d.r * 0.55 - d.vy * 0.04, a, Math.min(0.06 * sp, 0.4), d.r * 0.3);
+        this.dyeSplat(d.x - d.vx * 0.06, d.y + d.r * 0.55 - d.vy * 0.04, a, Math.min(0.035 * sp, 0.2), Math.min(d.r * 0.3, 0.22));
       }
     }
     for (const d of game.drops) {
@@ -567,7 +568,7 @@ export class Renderer {
       uDye: fl.dye.read.tex, uWave: this.waveTex,
       uW2U: w2u, uU2W: u2w, uDyeMap: dyeMap, uJar: jar, uMurkCol: murkCol,
       uFT: [1 / this.field.w, 1 / this.field.h], uTilt: tilt,
-      uS: FIELD_S, uThr: FIELD_T, uTime: t, uDyeK: dyeK, uFront: murky ? 0.75 : 0.35, uMurk: murk,
+      uS: FIELD_S, uThr: FIELD_T, uTime: t, uDyeK: dyeK, uFront: murky ? 0.75 : 0.12, uMurk: murk,
     });
     g.fullscreen();
 
