@@ -943,3 +943,8 @@ h2 {
 #orderIntro .card {
   background: var(--paper-strong);
 }
+
+#rules .sep {
+  margin: 0 5px;
+  opacity: 0.4;
+}
