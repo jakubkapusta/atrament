@@ -102,7 +102,7 @@ in vec2 vUv; out vec4 o;
 uniform sampler2D uBg, uDye, uWave;
 uniform vec4 uU2W, uW2U, uDyeMap, uAim;
 uniform vec3 uJar, uMurkCol, uTint;
-uniform float uDyeK, uTime, uMurk, uRayK;
+uniform float uDyeK, uTime, uMurk, uRayK, uMilk, uCosmic;
 void main(){
   vec2 w = vUv * uU2W.xy + uU2W.zw;
   float W = uJar.x, H = uJar.y;
@@ -145,6 +145,34 @@ void main(){
     col = mix(col, uMurkCol * (0.3 + 0.7 * lum(col)), haze);
     // surface: slightly darker just below (total internal reflection band)
     col *= 1.0 - 0.18 * exp(-depth * 9.0);
+    if (uMilk > 0.0) {
+      // opaque creamy liquid: light scatters instead of passing through; ink tints it pastel
+      vec3 milk = vec3(1.0, 0.955, 0.87) * (1.28 + 0.12 * chord - 0.1 * smoothstep(0.0, 1.0, depth / 9.0));
+      milk *= 1.0 + 0.04 * (fbm3(w * 0.8 + vec2(uTime * 0.03, 0.0)) - 0.5);
+      milk *= exp(-dye.rgb * uDyeK * 0.45);
+      col = mix(col, milk, 0.88 * uMilk);
+    }
+    if (uCosmic > 0.0) {
+      // deep indigo space inside the jar: nebulae glow, stars twinkle
+      col *= mix(vec3(1.0), vec3(0.2, 0.2, 0.52), uCosmic * (0.8 + 0.2 * chord));
+      vec2 q = w * 0.32 + vec2(uTime * 0.012, -uTime * 0.008);
+      float n1 = fbm(q + 3.1);
+      float n2 = fbm(q * 1.7 - vec2(uTime * 0.01, 0.0) + 8.4);
+      vec3 neb = vec3(0.62, 0.24, 0.95) * smoothstep(0.45, 0.82, n1) + vec3(0.15, 0.62, 1.0) * smoothstep(0.5, 0.86, n2)
+               + vec3(1.0, 0.4, 0.6) * smoothstep(0.7, 0.95, n1 * n2 * 1.6);
+      col += neb * 0.6 * uCosmic * exp(-dyeAmt * uDyeK * 0.5);
+      for (int L = 0; L < 2; L++) {
+        float sc = L == 0 ? 5.0 : 9.0;
+        vec2 cell = floor(w * sc);
+        vec2 f = fract(w * sc) - 0.5;
+        vec2 jit = vec2(hash12(cell + float(L) * 7.0), hash12(cell + 3.3 + float(L))) - 0.5;
+        float on = step(0.55, hash12(cell * 1.7 + float(L)));
+        float d = length(f - jit * 0.7);
+        float tw = 0.55 + 0.45 * sin(uTime * (2.0 + 3.0 * hash12(cell + 9.1)) + hash12(cell) * 20.0);
+        float star = exp(-d * d * (L == 0 ? 900.0 : 2400.0)) * on * tw;
+        col += vec3(1.25, 1.2, 1.45) * star * (L == 0 ? 6.0 : 3.0) * uCosmic;
+      }
+    }
   }
   // aiming guide: fine dashed line in the water
   if (uAim.z > 0.0 && w.y < uAim.y) {
@@ -175,8 +203,8 @@ void main(){
 
 export const MOTE_VS = HEAD + `
 uniform sampler2D uState, uDye;
-uniform vec4 uW2U; uniform vec3 uJar; uniform float uL, uPx, uDyeK; uniform int uSide;
-out float vA; out float vSize; out vec3 vT;
+uniform vec4 uW2U; uniform vec3 uJar; uniform float uL, uPx, uDyeK, uMilk, uCosmic; uniform int uSide;
+out float vA; out float vSize; out vec3 vT; out float vCos;
 void main(){
   ivec2 c = ivec2(gl_VertexID % uSide, gl_VertexID / uSide);
   vec4 s = texelFetch(uState, c, 0);
@@ -185,7 +213,8 @@ void main(){
   float blur = abs(s.z - 0.45);
   float size = (0.022 + blur * 0.2) * uPx;
   vSize = size;
-  vA = (0.5 / (1.0 + blur * 40.0)) * smoothstep(uJar.z, uJar.z - 0.2, w.y);
+  vA = (0.5 / (1.0 + blur * 40.0)) * smoothstep(uJar.z, uJar.z - 0.2, w.y) * (1.0 - uMilk) * (1.0 + uCosmic);
+  vCos = uCosmic;
   vec4 d = texture(uDye, s.xy);
   vT = exp(-d.rgb * uDyeK * 0.5);
   gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
@@ -193,7 +222,7 @@ void main(){
 }`;
 
 export const MOTE_FS = HEAD + `
-in float vA; in float vSize; in vec3 vT; out vec4 o;
+in float vA; in float vSize; in vec3 vT; in float vCos; out vec4 o;
 void main(){
   vec2 p = gl_PointCoord * 2.0 - 1.0;
   float d = length(p);
@@ -202,7 +231,9 @@ void main(){
   float a = (disc * 0.6 + ring * 0.5) * vA;
   // dust silhouettes against the backlight, with a faint forward-scatter glint
   vec3 c = mix(vec3(0.05, 0.045, 0.04), vec3(1.6) * vT, 0.25);
-  o = vec4(c * a, a);
+  // in zero-g the dust becomes glittering star dust (additive)
+  c = mix(c, vec3(2.2, 2.0, 2.6) * vT, vCos);
+  o = vec4(c * a, a * (1.0 - vCos));
 }`;
 
 // ------------------------------------------------------------------ drop field (metaballs)
@@ -295,7 +326,7 @@ uniform sampler2D uScene, uF0, uF1, uF2, uF3, uDye, uWave;
 uniform vec4 uW2U, uU2W, uDyeMap;
 uniform vec3 uJar, uMurkCol;
 uniform vec2 uFT, uTilt;
-uniform float uS, uThr, uTime, uDyeK, uFront, uMurk;
+uniform float uS, uThr, uTime, uDyeK, uFront, uMurk, uMilk, uCosmic;
 float hAt(vec2 uv){
   vec4 f1 = texture(uF1, uv);
   float f = f1.x;
@@ -420,6 +451,12 @@ void main(){
     col *= exp(-dye.rgb * uDyeK * uFront);
     float haze = 1.0 - exp(-(dye.a * 1.3 + uMurk * 1.6) * uFront);
     col = mix(col, uMurkCol * (0.3 + 0.7 * lum(col)), haze);
+    if (uMilk > 0.0) col = mix(col, vec3(1.0, 0.955, 0.87) * 1.25 * exp(-dye.rgb * uDyeK * 0.45), 0.34 * uMilk);
+  }
+  if (uCosmic > 0.0) {
+    float rimg = pow(max(1.0 - n.z, 0.0), 2.0);
+    col += vec3(0.55, 0.35, 1.0) * rimg * 1.2 * uCosmic + vec3(0.3, 0.6, 1.0) * rimg * rimg * 1.2 * uCosmic;
+    col += body * 0.12 * uCosmic; // faint inner glow so drops stay readable against the dark
   }
   o = vec4(mix(scene * (1.0 - ao * 0.18), col, alpha), 1.0);
 }`;

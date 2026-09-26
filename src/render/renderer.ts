@@ -550,7 +550,7 @@ export class Renderer {
     p.water.use().setAll({
       uBg: this.bg.tex, uDye: fl.dye.read.tex, uWave: this.waveTex,
       uU2W: u2w, uW2U: w2u, uDyeMap: dyeMap, uAim: [game.releaseX(), hang.y - hang.r, aimAlpha, 0],
-      uJar: jar, uMurkCol: murkCol, uDyeK: dyeK, uTime: t, uMurk: murk, uRayK: 0.16, uTint: liq.tint,
+      uJar: jar, uMurkCol: murkCol, uDyeK: dyeK, uTime: t, uMurk: murk, uRayK: 0.16 * (1 - liq.milk * 0.8), uTint: liq.tint, uMilk: liq.milk, uCosmic: liq.cosmic,
     });
     g.fullscreen();
 
@@ -567,7 +567,7 @@ export class Renderer {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       p.mote.use().setAll({
         uState: m.read.tex, uDye: fl.dye.read.tex, uW2U: w2u, uJar: jar, uL: DYE_L,
-        uPx: this.sPx * this.scale, uDyeK: dyeK, uSide: this.moteSide,
+        uPx: this.sPx * this.scale, uDyeK: dyeK, uSide: this.moteSide, uMilk: game.liquid.milk, uCosmic: game.liquid.cosmic,
       });
       gl.bindVertexArray(this.moteVAO);
       gl.drawArrays(gl.POINTS, 0, this.moteSide * this.moteSide);
@@ -597,7 +597,7 @@ export class Renderer {
       uDye: fl.dye.read.tex, uWave: this.waveTex,
       uW2U: w2u, uU2W: u2w, uDyeMap: dyeMap, uJar: jar, uMurkCol: murkCol,
       uFT: [1 / this.field.w, 1 / this.field.h], uTilt: tilt,
-      uS: FIELD_S, uThr: FIELD_T, uTime: t, uDyeK: dyeK, uFront: murky ? 0.75 : liq.haze > 0 ? 0.5 : 0.12, uMurk: murk,
+      uS: FIELD_S, uThr: FIELD_T, uTime: t, uDyeK: dyeK, uFront: murky ? 0.75 : liq.haze > 0 ? 0.5 : 0.12, uMurk: murk, uMilk: liq.milk, uCosmic: liq.cosmic,
     });
     g.fullscreen();
 

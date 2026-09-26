@@ -52,7 +52,11 @@ Ten plik jest źródłem prawdy dla kolejnych agentów: specyfikacja, architektu
 | Olej       | grawitacja 0.85, opór 2.8 → 4.7 s      | 2500 pkt w trybie Klasycznym         |
 | Mleko      | stała mętność, 4.1 s                   | 6 zleceń z sekcji Wprawa             |
 | Nieważkość | grawitacja 0.16, mały opór, 3.8 s      | wszystkie 13 atramentów w Atlasie    |
-Menu pokazuje postęp do następnej ciecz; odblokowanie ogłasza toast (`seenLiquids`).
+Wygląd: Olej — bursztynowy odcień; Mleko (`milk`) — nieprzejrzysta kremowa biel, atrament
+barwi ją pastelowo, krople za mleczną zasłoną; Nieważkość (`cosmic`) — granatowa głębia,
+mgławice (emisja, nie absorpcja — krople potrzebują światła zza słoja), migoczące gwiazdy,
+pył jako iskry, świecące obrysy kropli.
+Menu pokazuje postęp do następnej cieczy; odblokowanie ogłasza toast (`seenLiquids`).
 Rekordy osobno per ciecz (`bestKey`). Zlecenia mogą używać cieczy niezależnie od odblokowania.
 Uwaga: symulator nie czeka na opadnięcie kropli, a człowiek tak — czas spadku mierz osobno.
 
