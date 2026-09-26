@@ -1,6 +1,6 @@
 import { ALL_INKS, INKS, SPECIAL } from '../game/inks';
 import { LIQUIDS, LIQUID_ORDER } from '../game/liquids';
-import { dailyStreak, liquidUnlocked, type Profile } from '../game/progress';
+import { dailyStreak, liquidProgress, type Profile } from '../game/progress';
 import { chip } from './chips';
 
 export function renderAtlas(p: Profile, root: { grid: HTMLElement; count: HTMLElement; liquids: HTMLElement; stats: HTMLElement }) {
@@ -18,8 +18,9 @@ export function renderAtlas(p: Profile, root: { grid: HTMLElement; count: HTMLEl
   }).join('');
   root.liquids.innerHTML = LIQUID_ORDER.map((id) => {
     const l = LIQUIDS[id];
-    const open = liquidUnlocked(p, id);
-    return `<div><span><b>${l.name}</b> · ${l.desc}</span><span class="${open ? '' : 'lock'}">${open ? '✓' : `🔒 ${l.unlock} barw`}</span></div>`;
+    const pr = liquidProgress(p, id);
+    const lock = `🔒 ${l.unlock}<br><small>${Math.min(pr.cur, pr.need)} / ${pr.need}</small>`;
+    return `<div><span><b>${l.name}</b> · ${l.desc}</span><span class="${pr.done ? '' : 'lock'}">${pr.done ? '✓' : lock}</span></div>`;
   }).join('');
   const bestLine = Object.entries(p.best)
     .filter(([, v]) => v > 0)

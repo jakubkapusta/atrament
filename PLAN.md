@@ -45,10 +45,16 @@ Ten plik jest źródłem prawdy dla kolejnych agentów: specyfikacja, architektu
 | Zlecenia   | 36: Nauka / Wprawa / Mistrzowskie (`src/game/orders.ts`), cel, zakazy, | ✅     |
 |            | limit ruchów, gwiazdki; Wprawa od 6 samouczków, Mistrz. od 8 z Wprawy  |        |
 
-### Ciecze (`src/game/liquids.ts`, odblokowanie liczbą odkryć w Atlasie)
-Woda (0), Olej (6: grawitacja 0.55, opór 4.2, bursztynowy odcień), Mleko (8: stała mętność,
-krople „przed” mlekiem słabiej widać), Nieważkość (10: grawitacja 0.16, mały opór).
-Wybór w menu (strzałki), rekordy osobno per ciecz (`bestKey`).
+### Ciecze (`src/game/liquids.ts`, odblokowanie: `liquidProgress` w `progress.ts`)
+| Ciecz      | Fizyka (spadek z pipety na dno)        | Odblokowanie                         |
+|------------|----------------------------------------|--------------------------------------|
+| Woda       | 3.1 s                                  | od początku                          |
+| Olej       | grawitacja 0.85, opór 2.8 → 4.7 s      | 2500 pkt w trybie Klasycznym         |
+| Mleko      | stała mętność, 4.1 s                   | 6 zleceń z sekcji Wprawa             |
+| Nieważkość | grawitacja 0.16, mały opór, 3.8 s      | wszystkie 13 atramentów w Atlasie    |
+Menu pokazuje postęp do następnej ciecz; odblokowanie ogłasza toast (`seenLiquids`).
+Rekordy osobno per ciecz (`bestKey`). Zlecenia mogą używać cieczy niezależnie od odblokowania.
+Uwaga: symulator nie czeka na opadnięcie kropli, a człowiek tak — czas spadku mierz osobno.
 
 ## Architektura
 

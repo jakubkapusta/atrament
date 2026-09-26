@@ -15,10 +15,10 @@ import './style.css';
 
 import { Game, JAR_W, TUNING } from './game/game';
 import { INKS, Ink, SPECIAL, react } from './game/inks';
-import { LIQUIDS, type LiquidId } from './game/liquids';
+import { LIQUIDS, LIQUID_ORDER, type LiquidId } from './game/liquids';
 import { LEVELS, OrderTracker, forbidText, goalText, orderGame, type Level } from './game/orders';
 import {
-  DAILY_DROPS, bestKey, dailyKey, dailySeed, dailyStreak, loadProfile, saveProfile, unlockedLiquids,
+  DAILY_DROPS, bestKey, dailyKey, dailySeed, dailyStreak, liquidProgress, loadProfile, newlyUnlocked, saveProfile, unlockedLiquids,
 } from './game/progress';
 import { chip } from './ui/chips';
 import { renderAtlas } from './ui/atlas';
@@ -122,6 +122,13 @@ function refreshMenu() {
   ($('liqPrev') as HTMLButtonElement).disabled = i <= 0;
   ($('liqNext') as HTMLButtonElement).disabled = i >= open.length - 1;
   $('liquidRow').classList.toggle('hidden', open.length < 2);
+  const nextLocked = LIQUID_ORDER.find((id) => !open.includes(id));
+  const hint = $('liquidHint');
+  hint.classList.toggle('hidden', !nextLocked);
+  if (nextLocked) {
+    const pr = liquidProgress(profile, nextLocked);
+    hint.innerHTML = `🔒 Następna ciecz — <b>${LIQUIDS[nextLocked].name}</b>: ${LIQUIDS[nextLocked].unlock} (${Math.min(pr.cur, pr.need)}/${pr.need})`;
+  }
 }
 
 let lastScore = -1;
@@ -379,6 +386,15 @@ function showDailyStored() {
   overTimer = 0.001;
 }
 
+function announceUnlocks(delay = 0) {
+  for (const id of newlyUnlocked(profile)) {
+    setTimeout(() => {
+      audio.discover();
+      showToast(`Odblokowano ciecz: <b>${LIQUIDS[id].name}</b> — wybierz ją w menu`);
+    }, delay);
+  }
+}
+
 function endSession(won: boolean) {
   const s = session!;
   profile.games++;
@@ -435,6 +451,7 @@ function endSession(won: boolean) {
       });
     }
   }
+  announceUnlocks(1800);
   saveProfile(profile);
 }
 
@@ -533,15 +550,13 @@ function processEvents() {
         break;
       case 'discover': {
         if (profile.discovered.includes(e.ink)) break;
-        const before = new Set(unlockedLiquids(profile));
         profile.discovered = [...profile.discovered, e.ink];
+        announceUnlocks(2800);
         saveProfile(profile);
         if (SPECIAL.has(e.ink) || e.ink === Ink.K || e.ink === Ink.M) {
           audio.discover();
           showToast(`${chip(e.ink)} Nowy atrament: <b>${INKS[e.ink].name}</b>`);
         }
-        const fresh = unlockedLiquids(profile).find((id) => !before.has(id));
-        if (fresh) setTimeout(() => showToast(`Odblokowano ciecz: <b>${LIQUIDS[fresh].name}</b>`), 2800);
         break;
       }
       case 'prism':
