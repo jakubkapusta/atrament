@@ -812,6 +812,11 @@ h2 {
   margin-top: 0;
 }
 
+.order-tile.practice {
+  background: rgba(214, 196, 168, 0.55);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
 .order-tile.master {
   background: rgba(27, 24, 22, 0.88);
   color: #f6f1e8;

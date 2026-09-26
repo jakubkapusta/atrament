@@ -36,8 +36,8 @@ for (const level of LEVELS) {
   }
   const rr = randomRate(level, tries);
   const pct = rr.rate * 100;
-  const note = level.section === 'mistrz' && pct > 15 ? '  ⚠ za łatwe na mistrzowskie?' : !rr.path && !level.solution ? '  ⚠ brak dowodu rozwiązywalności' : '';
-  console.log(`${level.id.padEnd(10)} ${level.section === 'mistrz' ? 'M' : 'N'}  losowo ${pct.toFixed(1).padStart(5)}%  limit ${String(level.moves).padStart(2)} par ${String(level.par).padStart(2)}  ${replay}${note}`);
+  const note = level.section === 'mistrz' && pct > 15 ? '  ⚠ za łatwe na mistrzowskie?' : level.section === 'wprawa' && (pct > 45 || pct < 10) ? '  ⚠ poza przedziałem wprawy (10–45%)' : !rr.path && !level.solution ? '  ⚠ brak dowodu rozwiązywalności' : '';
+  console.log(`${level.id.padEnd(10)} ${level.section === 'mistrz' ? 'M' : level.section === 'wprawa' ? 'W' : 'N'}  losowo ${pct.toFixed(1).padStart(5)}%  limit ${String(level.moves).padStart(2)} par ${String(level.par).padStart(2)}  ${replay}${note}`);
 }
 if (bad) {
   console.error(`\n${bad} rozwiązań nie działa — uruchom npm run solve -- --level <id> i podmień solution/par`);

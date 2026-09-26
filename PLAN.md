@@ -42,8 +42,8 @@ Ten plik jest źródłem prawdy dla kolejnych agentów: specyfikacja, architektu
 | Mętny      | jw. + woda mętnieje z każdą fuzją, wybuch czerni ją czyści             | ✅     |
 | Słój dnia  | 50 kropli z seeda daty (`prng` osobny od efektów), bez przegranej,     | ✅     |
 |            | 1 oficjalna próba/dzień + trening, seria dni, share: emoji-siatka słoja |        |
-| Zlecenia   | 12 „Nauka” + 12 „Mistrzowskie” (`src/game/orders.ts`), cel, zakazy,   | ✅     |
-|            | limit ruchów, gwiazdki; mistrzowskie od 8 ukończonych samouczków       |        |
+| Zlecenia   | 36: Nauka / Wprawa / Mistrzowskie (`src/game/orders.ts`), cel, zakazy, | ✅     |
+|            | limit ruchów, gwiazdki; Wprawa od 6 samouczków, Mistrz. od 8 z Wprawy  |        |
 
 ### Ciecze (`src/game/liquids.ts`, odblokowanie liczbą odkryć w Atlasie)
 Woda (0), Olej (6: grawitacja 0.55, opór 4.2, bursztynowy odcień), Mleko (8: stała mętność,
@@ -139,11 +139,12 @@ dużych przez 160 kropel), mniejszy promień wybuchu, luźniejsze warunki złota
 
 ## Zlecenia — projektowanie i weryfikacja
 - **Nauka** (1–12): każdy poziom uczy jednej reguły — celowo łatwe (losowy gracz 30–90%).
-- **Mistrzowskie** (13–24): nowe cele (`empty`, `have`, `combo`), zakazy (`forbid: mud/explode`
+- **Wprawa** (13–24): łączą dwie idee, lekkie ograniczenia, ciecze. Losowy gracz 15–40%.
+- **Mistrzowskie** (25–36): nowe cele (`empty`, `have`, `combo`), zakazy (`forbid: mud/explode`
   → natychmiastowa porażka), ciasne układy startowe (`setup` z opcjonalnym `y`).
   Kryterium: istnieje rozwiązanie (`solution`), a *ostrożny losowy gracz* (czeka na spokój
   w słoju, rzuca w losowe miejsce) wygrywa w ≤ ~13% prób (obecnie 0.7–13%).
-- `npm run solve -- --level <id> [--beam 20 --cands 21 --random 800]` — beam search na
+- `npm run solve -- --level <id> | --section wprawa [--beam 20 --cands 21 --random 800]` — beam search na
   prawdziwej fizyce (po każdej kropli czeka na spokój, ocenia `OrderTracker.value`), a gdy
   nie znajdzie, bierze najkrótszą udaną ścieżkę z prób losowych. Wypisuje `solution` (3 miejsca
   po przecinku — fizyka jest chaotyczna, zaokrąglenie do 2 psuje odtworzenie).

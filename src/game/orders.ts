@@ -28,7 +28,7 @@ export interface Level {
   murky?: boolean;
   liquid?: LiquidId;
   forbid?: Forbid[];
-  section?: 'nauka' | 'mistrz';
+  section?: 'nauka' | 'wprawa' | 'mistrz';
   /** a known solution (x per drop), verified by scripts/orders-check.ts */
   solution?: number[];
 }
@@ -91,6 +91,83 @@ const TUTORIAL: Level[] = [
   {
     id: 'mistrz', name: 'Mistrz słoja', desc: 'Losowe krople. Zdobądź 2500 punktów w 60 kroplach.',
     goal: { type: 'score', value: 2500 }, moves: 60, par: 45, seed: 7,
+  },
+];
+
+// Intermediate orders: combine two ideas, light constraints. Careful random play ~15–40%.
+const PRACTICE: Level[] = [
+  {
+    id: 'dwie', name: 'Dwie barwy', desc: 'Oranż i fiolet w słoju jednocześnie.',
+    goal: { type: 'have', items: [{ ink: O, tier: 1 }, { ink: V, tier: 1 }] }, moves: 5, par: 4,
+    queue: [P(R, 0), P(Y, 0), P(B, 0), P(R, 0)],
+    solution: [1.225, 1.947, 5.553, 4.832],
+  },
+  {
+    id: 'oranz3', name: 'Duży oranż', desc: 'Buduj karmin i kadm w parach tej samej wielkości.',
+    goal: { type: 'make', ink: O, tier: 3 }, moves: 9, par: 6,
+    queue: [P(R, 1), P(Y, 1), P(R, 0), P(Y, 0), P(R, 1), P(Y, 1)],
+    solution: [2.710, 1.670, 5.553, 5.193, 4.097, 3.403],
+  },
+  {
+    id: 'dwawybuchy', name: 'Dwa wybuchy', desc: 'Dwie czernie w dwunastu kroplach.',
+    goal: { type: 'explode', count: 2 }, moves: 12, par: 6,
+    queue: [P(R, 0), P(Y, 0), P(B, 1), P(Y, 0), P(B, 0), P(R, 1)],
+    solution: [6.275, 5.914, 6.177, 1.947, 2.307, 0.630],
+  },
+  {
+    id: 'czystaczern', name: 'Czysta czerń', desc: 'Wywołaj wybuch, ale nie zrób przy tym mułu.',
+    goal: { type: 'explode', count: 1 }, moves: 7, par: 5, forbid: ['mud'],
+    queue: [P(R, 1), P(Y, 1), P(B, 1), P(Y, 1), P(R, 1), P(B, 2)],
+    solution: [3.902, 6.841, 3.355, 4.631, 5.247],
+  },
+  {
+    id: 'mul3', name: 'Trzy grudy', desc: 'Trzy bryły mułu różnej wielkości.',
+    goal: { type: 'clear', ink: M }, moves: 16, par: 6,
+    queue: [P(R, 0), P(Y, 0), P(B, 1), P(R, 1), P(Y, 1), P(B, 2)],
+    setup: [[M, 1, 1.2], [M, 2, 3.75], [M, 1, 6.3]],
+    solution: [2.307, 2.668, 2.363, 4.097, 3.403, 2.432],
+  },
+  {
+    id: 'combo3', name: 'Łańcuszek', desc: 'Combo ×3 — reakcje jedna po drugiej.',
+    goal: { type: 'combo', value: 3 }, moves: 10, par: 5,
+    queue: [P(R, 0), P(R, 0), P(Y, 1), P(B, 1), P(Y, 0), P(B, 0)],
+    solution: [6.888, 3.346, 2.230, 4.219, 3.140],
+  },
+  {
+    id: 'perlamix', name: 'Perła z mieszanki', desc: 'Kolejka miesza kolory — zbierz dwie duże krople jednego.',
+    goal: { type: 'make', ink: Ink.PEARL }, moves: 8, par: 7,
+    queue: [P(R, 3), P(B, 3), P(Y, 2), P(R, 3), P(B, 2), P(R, 3), P(B, 3)],
+    solution: [1.278, 4.978, 4.807, 5.518, 4.638, 5.351, 5.960],
+  },
+  {
+    id: 'sasiedzi', name: 'Niebezpieczni sąsiedzi', desc: 'Szmaragd i karmin tej samej wielkości naraz — jeśli się dotkną, wybuchną.',
+    goal: { type: 'have', items: [{ ink: G, tier: 2 }, { ink: R, tier: 2 }] }, moves: 14, par: 6,
+    queue: [P(Y, 1), P(B, 1), P(R, 1), P(Y, 1), P(B, 1), P(R, 1), P(Y, 2), P(B, 2)],
+    solution: [6.177, 5.830, 1.323, 4.443, 4.790, 0.630],
+  },
+  {
+    id: 'metnywynik', name: 'Mętne osiemset', desc: 'Woda mętnieje z każdą fuzją. 800 punktów.',
+    goal: { type: 'score', value: 800 }, moves: 25, par: 14, murky: true, seed: 5,
+    solution: [5.658, 1.445, 1.309, 4.513, 5.144, 0.866, 5.137, 6.420, 2.828, 6.749, 2.931, 1.216, 1.751, 3.997],
+  },
+  {
+    id: 'olejpusty', name: 'Oliwa sprawiedliwa', desc: 'W oleju wszystko toczy się wolniej. Dwa wybuchy.',
+    goal: { type: 'explode', count: 2 }, moves: 12, par: 6, liquid: 'oil',
+    queue: [P(B, 1), P(R, 0), P(Y, 0), P(B, 0), P(Y, 1)],
+    setup: [[O, 1, 1.5], [G, 1, 3.75], [V, 1, 6.0]],
+    solution: [1.670, 4.471, 3.389, 4.471, 6.177, 0.630],
+  },
+  {
+    id: 'mlekozloto', name: 'Złoto w mleku', desc: 'Trzy kadmy naraz — tylko że prawie nic nie widać.',
+    goal: { type: 'make', ink: Ink.GOLD }, moves: 4, par: 2, liquid: 'milk',
+    queue: [P(Y, 1)], setup: [[Y, 1, 2.2], [Y, 1, 5.3]],
+    solution: [3.725, 6.196],
+  },
+  {
+    id: 'kosmos', name: 'Kosmiczne wybuchy', desc: 'W nieważkości krople ledwo opadają. Trzy wybuchy.',
+    goal: { type: 'explode', count: 3 }, moves: 18, par: 9, liquid: 'zerog',
+    queue: [P(R, 0), P(Y, 0), P(B, 1), P(Y, 0), P(B, 0), P(R, 1)],
+    solution: [1.947, 1.586, 2.710, 0.504, 0.504, 3.403, 0.504, 2.668, 0.630],
   },
 ];
 
@@ -182,6 +259,7 @@ const MASTER: Level[] = [
 
 export const LEVELS: Level[] = [
   ...TUTORIAL.map((l) => ({ ...l, section: 'nauka' as const })),
+  ...PRACTICE.map((l) => ({ ...l, section: 'wprawa' as const })),
   ...MASTER.map((l) => ({ ...l, section: 'mistrz' as const })),
 ];
 

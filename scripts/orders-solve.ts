@@ -1,5 +1,6 @@
 // Beam-search solver for orders on the real physics.
 //   npm run solve -- --level czysta [--beam 6] [--cands 15] [--random 200]
+//   npm run solve -- --section wprawa        (all orders of a section; default: mistrz)
 // After every drop it waits until the jar is calm (like a careful player), scores the goal
 // progress and keeps the best branches. Prints a solution (x per drop) for Level.solution.
 
@@ -113,11 +114,12 @@ export function randomRate(level: Level, tries: number) {
 
 if (process.argv[1]?.endsWith('orders-solve.ts')) {
   const only = arg('--level', '');
+  const sectionArg = arg('--section', 'mistrz');
   const beam = +arg('--beam', '6');
   const cands = +arg('--cands', '15');
   const rtries = +arg('--random', '150');
   for (const level of LEVELS) {
-    if (only ? level.id !== only : level.section !== 'mistrz') continue;
+    if (only ? level.id !== only : level.section !== sectionArg) continue;
     const t0 = performance.now();
     const beamSol = solve(level, beam, cands);
     const rr = randomRate(level, rtries);

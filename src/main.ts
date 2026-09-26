@@ -446,16 +446,19 @@ function openOrders() {
   const list = $('orderList');
   const tile = (l: Level, i: number) => {
     const done = profile.orders[l.id];
-    const tutorialsDone = LEVELS.filter((x) => x.section === 'nauka' && profile.orders[x.id]).length;
-    const firstMaster = l.section === 'mistrz' && LEVELS[i - 1]?.section !== 'mistrz';
-    const unlocked = i === 0 || !!profile.orders[LEVELS[i - 1].id] || (firstMaster && tutorialsDone >= 8);
-    return `<button class="order-tile${unlocked ? '' : ' locked'}${l.section === 'mistrz' ? ' master' : ''}" data-i="${i}" ${unlocked ? '' : 'disabled'}>
+    // a section opens early once enough of the previous one is done
+    const prevSec = LEVELS[i - 1]?.section;
+    const firstOfSection = i > 0 && prevSec !== l.section;
+    const doneIn = (sec?: string) => LEVELS.filter((x) => x.section === sec && profile.orders[x.id]).length;
+    const early = firstOfSection && doneIn(prevSec) >= (l.section === 'wprawa' ? 6 : 8);
+    const unlocked = i === 0 || !!profile.orders[LEVELS[i - 1].id] || early;
+    return `<button class="order-tile${unlocked ? '' : ' locked'}${l.section === 'mistrz' ? ' master' : l.section === 'wprawa' ? ' practice' : ''}" data-i="${i}" ${unlocked ? '' : 'disabled'}>
       <span class="n">${i + 1}</span><span class="nm">${l.name}</span>
       <span class="st">${unlocked ? starsHtml(done?.stars ?? 0) : '🔒'}</span></button>`;
   };
   const section = (name: string, key: string) =>
     `<h3 class="order-sec">${name}</h3><div class="order-grid">${LEVELS.map((l, i) => (l.section === key ? tile(l, i) : '')).join('')}</div>`;
-  list.innerHTML = section('Nauka', 'nauka') + section('Mistrzowskie', 'mistrz');
+  list.innerHTML = section('Nauka', 'nauka') + section('Wprawa', 'wprawa') + section('Mistrzowskie', 'mistrz');
   list.querySelectorAll<HTMLButtonElement>('.order-tile').forEach((b) =>
     b.addEventListener('click', () => {
       audio.ui();
