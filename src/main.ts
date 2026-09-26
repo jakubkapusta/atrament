@@ -31,7 +31,7 @@ try {
 } catch (e) {
   const d = document.createElement('div');
   d.id = 'fatal';
-  d.textContent = 'Ta przeglądarka nie obsługuje WebGL2, którego potrzebuje Atrament. ' + (e instanceof Error ? e.message : '');
+  d.textContent = 'Nie udało się uruchomić grafiki (WebGL2). ' + (e instanceof Error ? e.message : '');
   document.body.appendChild(d);
   throw e;
 }
@@ -416,6 +416,22 @@ if (debug) {
     // run frames synchronously (for automated checks while the tab is throttled)
     __tick: (n = 1, dt = 1 / 60) => {
       for (let i = 0; i < n; i++) tick(dt);
+    },
+    // start a game (if needed) and drop n drops at pseudo-random positions
+    __drive: (n: number, seed = 1, mode: Mode = 'classic') => {
+      let s = seed;
+      const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+      if (state !== 'play') {
+        startGame(mode);
+        for (let i = 0; i < 60; i++) tick(1 / 60);
+      }
+      for (let i = 0; i < n; i++) {
+        game.aim(0.8 + rnd() * (JAR_W - 1.6));
+        for (let k = 0; k < 200 && !game.canRelease(); k++) tick(1 / 60);
+        for (let k = 0; k < 6; k++) tick(1 / 60);
+        game.release();
+        for (let k = 0; k < 10; k++) tick(1 / 60);
+      }
     },
   });
 }

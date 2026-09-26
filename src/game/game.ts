@@ -9,7 +9,41 @@ export const DANGER = 8.6;
 export const CORNER = 1.1;
 export const TIP_Y = 11.75; // pipette tip height
 export const PIP_LEN = 3.3; // pivot distance above tip (pendulum length)
-export const TIER_R = [0.36, 0.45, 0.56, 0.7, 0.87, 1.08, 1.34, 1.66];
+const BASE_R = [0.36, 0.45, 0.56, 0.7, 0.87, 1.08, 1.34, 1.66];
+
+/**
+ * Difficulty knobs — tweak with scripts/sim.ts (headless simulation).
+ * tierScale: drop size relative to the jar (bigger = jar fills faster).
+ */
+export const TUNING = {
+  tierScale: 1.4,
+  earlyWeights: [60, 40, 0],
+  spawnWeights: [40, 35, 25, 0], // spawn tier weights at the start…
+  lateWeights: [10, 25, 35, 30], // …ramping linearly to these over rampDrops drops
+  rampDrops: 160,
+  blastK: 2.4, // explosion radius = r * blastK + blastBase
+  blastBase: 0.5,
+  dangerTime: 2.8, // seconds above the MAX line before game over
+  pearlTier: 4, // two same-colour drops of this tier fuse into a pearl
+  tripleSlack: 1.3, // a third same drop this close (× radii) joins the fusion → gold
+};
+
+export function spawnWeightsAt(drops: number) {
+  const t = Math.min(1, drops / Math.max(1, TUNING.rampDrops));
+  const a = TUNING.spawnWeights;
+  const b = TUNING.lateWeights;
+  const n = Math.max(a.length, b.length);
+  const w: number[] = [];
+  for (let i = 0; i < n; i++) w.push((a[i] ?? 0) * (1 - t) + (b[i] ?? 0) * t);
+  return w;
+}
+
+/** Drop radius per tier (mutated in place by setTierScale, shared with the renderer). */
+export const TIER_R = BASE_R.map((r) => r * TUNING.tierScale);
+export function setTierScale(k: number) {
+  TUNING.tierScale = k;
+  for (let i = 0; i < BASE_R.length; i++) TIER_R[i] = BASE_R[i] * k;
+}
 const POINTS = [2, 5, 10, 18, 30, 48, 75, 120];
 
 const G_AIR = 26;
@@ -156,6 +190,8 @@ export class Game {
   acc = 0;
   murk = 0;
   aiT = 1;
+  /** false = headless simulation: skip purely visual particles */
+  fx = true;
   discovered: Set<Ink>;
 
   constructor(mode: Mode, seed = (Math.random() * 2 ** 32) >>> 0, discovered: Ink[] = []) {
@@ -171,7 +207,7 @@ export class Game {
     const early = this.dropsUsed < 6;
     return {
       ink: PRIMARIES[this.rng.int(3)],
-      tier: this.rng.weighted(early ? [60, 40, 0] : [44, 36, 20]),
+      tier: this.rng.weighted(early ? TUNING.earlyWeights : spawnWeightsAt(this.dropsUsed)),
     };
   }
 
@@ -480,7 +516,7 @@ export class Game {
     d.vy *= 0.42;
     d.a2vy += 0;
     d.a2vx += sp * 0.12; // flatten on entry
-    const n = 3 + Math.floor(d.r * 10);
+    const n = this.fx ? 3 + Math.floor(d.r * 10) : 0;
     for (let i = 0; i < n; i++) {
       this.bubbles.push({
         x: d.x + (this.rng.next() - 0.5) * d.r * 1.6,
@@ -492,7 +528,7 @@ export class Game {
         life: 0,
       });
     }
-    const ns = Math.min(14, Math.floor(sp * d.r * 2.2));
+    const ns = this.fx ? Math.min(14, Math.floor(sp * d.r * 2.2)) : 0;
     for (let i = 0; i < ns; i++) {
       const side = this.rng.next() < 0.5 ? -1 : 1;
       this.spray.push({
@@ -542,13 +578,13 @@ export class Game {
           continue;
         }
         if (a.tier !== b.tier) continue;
-        let res = react(a.ink, b.ink, a.tier);
+        let res = react(a.ink, b.ink, a.tier, TUNING.pearlTier);
         if (!res) continue;
         const group = [a, b];
         if (a.ink === b.ink && res.kind === 'grow' && a.ink !== Ink.K && a.ink !== Ink.M && a.ink !== Ink.GOLD) {
           for (const c of ds) {
             if (c === a || c === b || c.state !== 0 || c.ink !== a.ink || c.tier !== a.tier) continue;
-            if (this.touching(c, a) || this.touching(c, b)) {
+            if (this.touching(c, a, TUNING.tripleSlack) || this.touching(c, b, TUNING.tripleSlack)) {
               group.push(c);
               res = { ink: Ink.GOLD, tier: Math.min(a.tier + 1, MAX_TIER), scoreMul: 4, kind: 'gold' };
               break;
@@ -647,7 +683,7 @@ export class Game {
   }
 
   private explode(d: Drop) {
-    const R = d.rt * 3.3 + 0.9;
+    const R = d.rt * TUNING.blastK + TUNING.blastBase;
     this.beginDissolve(d, 0);
     d.dissolveT = 1; // remove immediately
     if (this.comboT > 0) this.combo++;
@@ -754,7 +790,7 @@ export class Game {
   }
 
   spawnBubble(x: number, y: number, r: number, vx = 0, vy = 0) {
-    if (this.bubbles.length > 220 || y > WATER - 0.05) return;
+    if (!this.fx || this.bubbles.length > 220 || y > WATER - 0.05) return;
     this.bubbles.push({ x, y, r, vx, vy, ph: this.rng.next() * 6.28, life: 0 });
   }
 
@@ -829,7 +865,7 @@ export class Game {
       if (top > DANGER && Math.hypot(d.vx, d.vy) < 2.5) above = true;
     }
     this.dangerNear = near;
-    if (above) this.danger += dt / 2.8;
+    if (above) this.danger += dt / TUNING.dangerTime;
     else this.danger = Math.max(0, this.danger - dt / 1.2);
     if (this.danger >= 1) this.gameOver();
   }
@@ -892,6 +928,34 @@ export class Game {
         hi.flash = 1;
       }
     }
+  }
+
+  /** Deep copy of the simulation state (for look-ahead AI); visual particles are dropped. */
+  clone(): Game {
+    const g = new Game(this.mode, 1, [...this.discovered]);
+    g.fx = false;
+    g.rng.s = this.rng.s;
+    g.drops = this.drops.map((d) => ({ ...d }));
+    const map = new Map(this.drops.map((d, i) => [d, g.drops[i]]));
+    g.merges = this.merges.map((m) => ({ drops: m.drops.map((d) => map.get(d)!), res: m.res, t: m.t }));
+    g.queue = this.queue.map((p) => ({ ...p }));
+    g.current = this.current && { ...this.current };
+    g.hold = this.hold && { ...this.hold };
+    g.holdUsed = this.holdUsed;
+    g.dropsUsed = this.dropsUsed;
+    g.pip = { ...this.pip };
+    g.score = this.score;
+    g.combo = this.combo;
+    g.comboT = this.comboT;
+    g.bestCombo = this.bestCombo;
+    g.danger = this.danger;
+    g.time = this.time;
+    g.acc = this.acc;
+    g.murk = this.murk;
+    g.over = this.over;
+    g.surface.h.set(this.surface.h);
+    g.surface.v.set(this.surface.v);
+    return g;
   }
 
   // ---------------------------------------------------------------- persistence

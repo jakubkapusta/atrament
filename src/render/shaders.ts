@@ -17,6 +17,8 @@ float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
   return mix(mix(hash12(i), hash12(i+vec2(1,0)), u.x), mix(hash12(i+vec2(0,1)), hash12(i+vec2(1,1)), u.x), u.y); }
 float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a*vnoise(p); p = p*2.03 + 17.1; a *= 0.5; } return s; }
 float fbm3(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 3; i++){ s += a*vnoise(p); p = p*2.03 + 17.1; a *= 0.5; } return s; }
+float sq(float x){ return x * x; }
+float p6(float x){ float y = x * x; return y * y * y; }
 float lum(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 float caustic(vec2 p, float t){
   vec2 i = p; float c = 1.0; float inten = 0.005;
@@ -26,7 +28,7 @@ float caustic(vec2 p, float t){
     c += 1.0 / length(vec2(p.x / (sin(i.x + tt) / inten), p.y / (cos(i.y + tt) / inten)));
   }
   c /= 4.0;
-  c = 1.17 - pow(c, 1.4);
+  c = 1.17 - pow(max(c, 0.0), 1.4);
   return clamp(pow(abs(c), 8.0), 0.0, 3.0);
 }
 // perspective openness of horizontal circles on the jar at height y (camera slightly above)
@@ -51,8 +53,11 @@ void main(){
   float p = panelAt(w);
   vec2 pc = vec2(uJar.x * 0.5, uJar.y * 0.5);
   vec2 d = (w - pc) / uJar.y;
-  vec3 panel = mix(vec3(1.0, 0.97, 0.92), vec3(0.95, 0.97, 1.0), clamp(d.y + 0.5, 0.0, 1.0));
-  panel *= 1.75 + 0.55 * exp(-dot(d, d) * 4.0);
+  // warm studio paper, lit by a soft vertical strip behind the jar: the horizontal
+  // falloff is what the water cylinder visibly magnifies
+  vec3 panel = mix(vec3(0.98, 0.92, 0.84), vec3(0.9, 0.92, 0.96), clamp(d.y + 0.55, 0.0, 1.0));
+  float dx = (w.x - pc.x) / uJar.x;
+  panel *= 0.62 + 0.55 * exp(-sq(dx / 0.3)) + 0.18 * exp(-dot(d, d) * 5.0);
   panel *= 1.0 + 0.03 * (fbm3(w * 0.45 + 3.0) - 0.5);
   vec3 room = vec3(0.012, 0.011, 0.015) * (1.0 + 0.6 * vnoise(w * 0.2));
   // out-of-focus lights in the dark studio (hexagonal bokeh), stronger parallax
@@ -75,7 +80,7 @@ void main(){
     float dist = max(yT - w.y, 0.0);
     float refl = panelAt(vec2(w.x, yT + dist * 1.3)) * exp(-dist * 0.7);
     vec3 table = vec3(0.01, 0.009, 0.01) + panel * refl * 0.12;
-    table += panel * 0.25 * exp(-pow(dist * 16.0, 2.0)) * p;
+    table += panel * 0.25 * exp(-sq(dist * 16.0)) * p;
     col = mix(col, table, smoothstep(yT + 0.2, yT - 0.05, w.y));
   }
   for (int i = 0; i < 2; i++) {
@@ -85,8 +90,8 @@ void main(){
     float disc = smoothstep(1.0, 0.94, d);
     vec3 lit = vec3(1.0, 0.97, 0.92) * (1.9 - 0.6 * d * d) * (1.0 + 0.02 * (vnoise(w * 9.0) - 0.5));
     col = mix(col, lit, disc * sl.w);
-    col += vec3(1.2, 1.15, 1.1) * exp(-pow((d - 0.965) / 0.025, 2.0)) * sl.w;
-    col *= 1.0 - 0.5 * exp(-pow((d - 1.06) / 0.05, 2.0)) * sl.w;
+    col += vec3(1.2, 1.15, 1.1) * exp(-sq((d - 0.965) / 0.025)) * sl.w;
+    col *= 1.0 - 0.5 * exp(-sq((d - 1.06) / 0.05)) * sl.w;
   }
   o = vec4(col, 1.0);
 }`;
@@ -292,7 +297,7 @@ float hAt(vec2 uv){
   float f = f1.x;
   if (f <= 1e-5) return 0.0;
   float r = f1.y / f;
-  float c = pow(f, 1.0 / 3.0);
+  float c = pow(max(f, 0.0), 1.0 / 3.0);
   float k = 1.0 - uS * uS * (1.0 - c);
   return r * sqrt(clamp(k, 0.0, 1.5));
 }
@@ -324,8 +329,8 @@ void main(){
   float L = 2.0 * h;
   float Lc = L / (1.0 + 0.42 * L);
   vec3 T = exp(-A * Lc * 3.4);
-  float core = pow(n.z, 3.0);
-  vec3 col = bg * T * (0.5 + 0.8 * core);
+  float core = pow(max(n.z, 0.0), 3.0);
+  vec3 col = bg * T * (0.62 + 0.95 * core);
   // light scattered inside the ink body
   vec3 body = exp(-A * 0.5);
   col += body * body * 0.06 * (1.0 - exp(-L * 3.0));
@@ -338,7 +343,7 @@ void main(){
 
   vec3 V = vec3(0.0, 0.0, 1.0);
   vec3 Rf = reflect(-V, n);
-  float F = 0.025 + 0.975 * pow(1.0 - n.z, 5.0);
+  float F = 0.025 + 0.975 * pow(max(1.0 - n.z, 0.0), 5.0);
   vec3 env = envMap(Rf, uTilt);
 
   if (gold > 0.01) {
@@ -484,16 +489,16 @@ void main(){
     float path = wall ? (0.8 + 3.2 * tw) : (base ? 2.6 : 0.2 / max(s, 0.25));
     g *= exp(-vec3(0.2, 0.045, 0.14) * path);
     if (wall) {
-      g += vec3(0.85, 1.0, 0.95) * exp(-pow((tw - 0.03) / 0.03, 2.0)) * 0.55;
-      g *= 1.0 - 0.6 * exp(-pow((tw - 0.24) / 0.11, 2.0));
+      g += vec3(0.85, 1.0, 0.95) * exp(-sq((tw - 0.03) / 0.03)) * 0.55;
+      g *= 1.0 - 0.6 * exp(-sq((tw - 0.24) / 0.11));
       g *= mix(1.0, 0.4, smoothstep(0.7, 1.0, tw));
-      g += vec3(1.0) * exp(-pow((tw - 0.965) / 0.02, 2.0)) * 0.45;
+      g += vec3(1.0) * exp(-sq((tw - 0.965) / 0.02)) * 0.45;
     }
     if (base) {
       float yFl = -eB * 0.6 * s;
-      float topLine = exp(-pow((w.y - yFl) / 0.025, 2.0));
+      float topLine = exp(-sq((w.y - yFl) / 0.025));
       g += vec3(0.9, 1.0, 0.95) * topLine * 0.35;
-      g += vec3(0.85, 1.0, 0.92) * exp(-pow((w.y - yBot) / 0.035, 2.0)) * 0.9;
+      g += vec3(0.85, 1.0, 0.92) * exp(-sq((w.y - yBot) / 0.035)) * 0.9;
       g *= 0.85 + 0.35 * caustic(w * 3.3 + 2.0, uTime * 0.5);
     }
     float edgeAA = clamp((1.0 - au) * Ro / px, 0.0, 1.0) * clamp((w.y - yBot) / px, 0.0, 1.0);
@@ -512,7 +517,7 @@ void main(){
       // MAX line
       float ey2 = ellE(uDanger.x, H) * s;
       float yl = uDanger.x - ey2;
-      float dl = exp(-pow((w.y - yl) / (px * 1.2 + 0.01), 2.0));
+      float dl = exp(-sq((w.y - yl) / (px * 1.2 + 0.01)));
       float dash = step(0.3, fract(w.x * 2.2));
       float pulse = uDanger.y * (0.6 + 0.4 * sin(uTime * 12.0));
       col = mix(col, vec3(0.8, 0.1, 0.08) * (1.0 + pulse * 4.0), dl * dash * (0.55 + 0.45 * uDanger.y) * float(!wall));
@@ -532,33 +537,33 @@ void main(){
       float gl = pow(max(0.0, sin(w.x * 3.0 + wave * 30.0 + uTime)), 12.0);
       surf += vec3(1.2) * gl * 0.25;
       col = mix(col, surf, band * 0.75);
-      col += vec3(1.0) * exp(-pow((w.y - yF) / (px * 1.3 + 0.006), 2.0)) * 0.75;
-      col *= 1.0 - 0.3 * exp(-pow((w.y - (yF - 0.05)) / 0.03, 2.0));
-      col += vec3(1.0) * exp(-pow((w.y - yB) / (px + 0.005), 2.0)) * 0.3;
+      col += vec3(1.0) * exp(-sq((w.y - yF) / (px * 1.3 + 0.006))) * 0.75;
+      col *= 1.0 - 0.3 * exp(-sq((w.y - (yF - 0.05)) / 0.03));
+      col += vec3(1.0) * exp(-sq((w.y - yB) / (px + 0.005))) * 0.3;
     }
 
     // front-surface reflections: vertical softbox stripes
     float uu = u + 0.005 * sin(w.y * 2.7 + 1.0) - uTilt.x * 0.05;
-    float st = exp(-pow((uu + 0.6) / 0.03, 6.0)) * 0.2
-             + exp(-pow((uu + 0.79) / 0.01, 2.0)) * 1.1
-             + exp(-pow((uu - 0.68) / 0.02, 4.0)) * 0.14
-             + exp(-pow((uu - 0.87) / 0.01, 2.0)) * 2.0;
+    float st = exp(-p6((uu + 0.6) / 0.03)) * 0.2
+             + exp(-sq((uu + 0.79) / 0.01)) * 1.6
+             + exp(-sq(sq((uu - 0.68) / 0.02))) * 0.14
+             + exp(-sq((uu - 0.87) / 0.01)) * 2.4;
     float vfade = smoothstep(yBot, yBot + 1.4, w.y) * smoothstep(yTopB + 0.1, H - 1.2, w.y);
     col += vec3(1.0, 0.99, 0.97) * st * vfade;
-    float fres = pow(1.0 - s, 4.0);
+    float fres = sq(sq(1.0 - s));
     col = mix(col, vec3(0.03), fres * 0.55);
 
     // rim (lip) — back and front arcs of the opening
     float yRF = H - eT * s;
     float yRB = yTopB;
     float bw = 0.07;
-    float rimB = exp(-pow((w.y - yRB) / (bw * 0.8), 2.0));
-    float rimF = exp(-pow((w.y - yRF) / bw, 2.0));
+    float rimB = exp(-sq((w.y - yRB) / (bw * 0.8)));
+    float rimF = exp(-sq((w.y - yRF) / bw));
     col = mix(col, col * 0.55 + vec3(0.03, 0.05, 0.045), rimB * 0.55);
-    col += vec3(0.9, 1.0, 0.96) * exp(-pow((w.y - (yRB + bw * 0.5)) / (bw * 0.25), 2.0)) * 0.5;
+    col += vec3(0.9, 1.0, 0.96) * exp(-sq((w.y - (yRB + bw * 0.5)) / (bw * 0.25))) * 0.5;
     col = mix(col, col * 0.45 + vec3(0.04, 0.07, 0.06), rimF * 0.65);
-    col += vec3(0.95, 1.0, 0.97) * exp(-pow((w.y - (yRF + bw * 0.55)) / (bw * 0.22), 2.0)) * (0.35 + 0.9 * smoothstep(0.4, -0.8, u));
-    col += vec3(1.0) * exp(-pow((w.y - (yRF - bw * 0.7)) / (bw * 0.2), 2.0)) * 0.25;
+    col += vec3(0.95, 1.0, 0.97) * exp(-sq((w.y - (yRF + bw * 0.55)) / (bw * 0.22))) * (0.35 + 0.9 * smoothstep(0.4, -0.8, u));
+    col += vec3(1.0) * exp(-sq((w.y - (yRF - bw * 0.7)) / (bw * 0.2))) * 0.25;
   }
 
   // ---- pipette
@@ -568,12 +573,12 @@ void main(){
     vec2 d = w - piv;
     float ca = cos(-a), sa = sin(-a);
     vec2 lp = vec2(ca * d.x - sa * d.y, sa * d.x + ca * d.y) + vec2(0.0, uPipLen);
-    float sq = uPip.w;
+    float sqz = uPip.w;
     float tubeTop = 2.05;
     float rT = mix(0.05, 0.15, smoothstep(0.0, 0.85, lp.y));
     float sdT = max(abs(lp.x) - rT, max(-lp.y, lp.y - tubeTop));
     float sdC = max(abs(lp.x) - 0.23, abs(lp.y - (tubeTop + 0.06)) - 0.07);
-    vec2 brad = vec2(0.33 * (1.0 + 0.2 * sq), 0.58 * (1.0 - 0.12 * sq));
+    vec2 brad = vec2(0.33 * (1.0 + 0.2 * sqz), 0.58 * (1.0 - 0.12 * sqz));
     vec2 bc = vec2(0.0, tubeTop + 0.1 + brad.y * 0.92);
     vec2 bp = (lp - bc) / brad;
     float sdB = (length(bp) - 1.0) * min(brad.x, brad.y);
@@ -588,8 +593,8 @@ void main(){
       float path = 2.0 * rT * sqrt(max(inner * inner - xn * xn, 0.0)) * 7.0;
       tb *= mix(vec3(1.0), exp(-uPipInk * path), liquid);
       tb *= 1.0 - smoothstep(inner - 0.15, 1.0, abs(xn)) * 0.6;
-      tb += vec3(1.0) * exp(-pow((xn + 0.48) / 0.11, 2.0)) * 0.65;
-      tb += vec3(1.0) * exp(-pow((xn - 0.72) / 0.06, 2.0)) * 0.22;
+      tb += vec3(1.0) * exp(-sq((xn + 0.48) / 0.11)) * 0.65;
+      tb += vec3(1.0) * exp(-sq((xn - 0.72) / 0.06)) * 0.22;
       tb *= vec3(0.95, 1.0, 0.98);
       col = mix(col, tb, covT);
     }
@@ -597,7 +602,7 @@ void main(){
     float covC = clamp(0.5 - sdC / px, 0.0, 1.0) * uPipVis;
     if (covC > 0.0) {
       float xn = lp.x / 0.23;
-      vec3 cc = vec3(0.06, 0.06, 0.07) * (0.6 + 0.4 * (1.0 - xn * xn)) + vec3(0.6) * exp(-pow((xn + 0.45) / 0.15, 2.0)) * 0.5;
+      vec3 cc = vec3(0.06, 0.06, 0.07) * (0.6 + 0.4 * (1.0 - xn * xn)) + vec3(0.6) * exp(-sq((xn + 0.45) / 0.15)) * 0.5;
       col = mix(col, cc, covC);
     }
     // rubber bulb (backlit edges glow translucent red)
@@ -610,7 +615,7 @@ void main(){
       vec3 rub = vec3(0.3, 0.03, 0.025) * (0.2 + 0.85 * diff);
       float spec = pow(max(dot(reflect(vec3(0.0, 0.0, -1.0), nb), kd), 0.0), 18.0);
       rub += vec3(1.0, 0.8, 0.75) * spec * 0.55;
-      rub += vec3(1.0, 0.25, 0.15) * pow(1.0 - nb.z, 3.0) * 0.7;
+      rub += vec3(1.0, 0.25, 0.15) * pow(max(1.0 - nb.z, 0.0), 3.0) * 0.7;
       col = mix(col, rub, covB);
     }
   }
@@ -679,7 +684,7 @@ void main(){
     vec2 d = uv - s.xy; d.x *= uAspect;
     float dist = length(d);
     float wdt = 0.03 + s.z * 0.18;
-    float ring = exp(-pow((dist - s.z) / wdt, 2.0));
+    float ring = exp(-sq((dist - s.z) / wdt));
     vec2 dir = d / max(dist, 1e-4);
     disp -= dir * ring * s.w * vec2(1.0 / uAspect, 1.0);
     ca += ring * s.w;
@@ -697,7 +702,7 @@ void main(){
   col *= uExposure;
   col = aces(col);
   col *= 1.0 - edge * 0.55;
-  col = pow(col, vec3(1.0 / 2.2));
+  col = pow(max(col, vec3(0.0)), vec3(1.0 / 2.2));
   float gr = hash12(gl_FragCoord.xy + fract(uTime * 7.13) * 400.0) - 0.5;
   col += gr * 0.022;
   o = vec4(col, 1.0);

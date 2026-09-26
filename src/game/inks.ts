@@ -72,7 +72,7 @@ export interface Reaction {
 }
 
 /** Reaction between two drops of the same tier; null = they just bounce. */
-export function react(a: Ink, b: Ink, tier: number): Reaction | null {
+export function react(a: Ink, b: Ink, tier: number, pearlTier = MAX_TIER): Reaction | null {
   const up = Math.min(tier + 1, MAX_TIER);
   if (a === Ink.PEARL || b === Ink.PEARL) {
     if (a === b) return { ink: Ink.PEARL, tier: up, scoreMul: 2, kind: 'pearl' };
@@ -86,8 +86,8 @@ export function react(a: Ink, b: Ink, tier: number): Reaction | null {
     return { ink: other, tier: up, scoreMul: 3, kind: other === Ink.GOLD ? 'gold' : 'grow' };
   }
   if (a === b) {
-    if (tier >= MAX_TIER && a !== Ink.K && a !== Ink.M) {
-      return { ink: Ink.PEARL, tier: 4, scoreMul: 4, kind: 'pearl' };
+    if (tier >= pearlTier && a !== Ink.K && a !== Ink.M) {
+      return { ink: Ink.PEARL, tier, scoreMul: 4, kind: 'pearl' };
     }
     return { ink: a, tier: up, scoreMul: 1, kind: 'grow' };
   }

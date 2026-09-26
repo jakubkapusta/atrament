@@ -56,6 +56,7 @@ src/
   main.ts            — bootstrap, pętla, stany (menu/attract, gra, pauza, koniec), zapis stanu
   core/math.ts       — RNG (mulberry32), pomocnicze
   game/inks.ts       — definicje atramentów (absorbancja Beer-Lambert), reguły reakcji
+  game/ai.ts         — boty do symulacji balansu (random/greedy/lookahead)
   game/game.ts       — fizyka PBD kropli, fuzje, wybuchy, bąbelki, fala powierzchni,
                        pipeta (celowanie), punkty, eventy dla renderera/audio
   gl/gl.ts           — wrapper WebGL2 (programy, FBO, MRT, double-FBO)
@@ -105,8 +106,28 @@ Fizyka: stały krok 1/120 s, 3 podkroki, PBD. Płyn: domena = obszar wody.
   odbicie słoja w blacie i kolorowa kaustyka na stole, paralaksa (żyroskop/mysz),
   wahadłowa pipeta z gumową gruszką (ściska się przy upuszczeniu), nadruk podziałki
 
+## Balans i symulacja (`npm run sim`)
+Parametry trudności są w `TUNING` (`src/game/game.ts`), boty w `src/game/ai.ts`,
+skrypt w `scripts/sim.ts` (bez UI, stały krok fizyki, bot „myśli” `--think` s na kroplę).
+```
+npm run sim -- --games 30 --ai greedy          # random | greedy | lookahead (wolny, najsilniejszy)
+npm run sim -- --sweep tierScale=1.2,1.4,1.6
+npm run sim -- --sweep 'late=15,30,35,20;10,25,35,30'   # ; gdy wartości mają przecinki
+npm run sim -- --blastK 2.2 --rampDrops 140 --mode murky -v
+```
+Wyniki dla obecnych ustawień (think 1.0 s ≈ 1.75 s/kroplę, tryb klasyczny):
+| bot       | mediana | p10–p90     | wybuchy/grę | złoto | opal | perła |
+|-----------|---------|-------------|-------------|-------|------|-------|
+| random    | ~3:30   | 2:06–5:27   | 8           | 0.3   | 0.1  | –     |
+| greedy    | ~5–7:00 | 3:45–14:00  | 21          | 1.0   | 0.9  | 2.2   |
+| lookahead | ~9:00   | 4:40–14:30  | 28          | –     | 0.3  | –     |
+Wnioski z pierwszych pomiarów: przy pierwotnych ustawieniach (krople 1.0×, stały rozkład
+tierów 0–2, duży promień wybuchu) nawet bot losowy nie przegrywał (limit 900 kropel).
+Dlatego: krople 1.4× większe, rampa trudności (spawn tierów 0–3 przesuwa się w stronę
+dużych przez 160 kropel), mniejszy promień wybuchu, luźniejsze warunki złota/perły.
+
 ## Roadmapa (kolejność)
-1. Strojenie balansu (rozkład tierów, promienie wybuchu, punkty) po testach na telefonie.
+1. Strojenie balansu po testach na telefonie (symulator powyżej).
 2. **Słój dnia**: seed = data (YYYY-MM-DD), 50 kropli, wynik + udostępnianie
    (miniatura słoja → canvas → Web Share API / schowek).
 3. **Atlas barw**: ekran kolekcji (odkryte atramenty już zapisywane w `atrament.discovered`),
@@ -134,5 +155,7 @@ Przykład scenariusza: `__game().makeDrop(Ink, tier, x, y)` + `drops.push(...)` 
 - Pole metaballi: kolor ważony w², powierzchnia z sumy w; wysokość odzyskiwana z pola
   (odwrócenie falloffu) → normalne. `FIELD_S` steruje grubością „szyjek” między kroplami.
 - Płyn: prędkość w texelach siatki/s; splaty są batchowane (24 na przebieg).
+- **GLSL na Androidzie**: `pow(x, y)` z ujemnym `x` daje NaN (czarne prostokąty) —
+  używaj `sq()`/`p6()` z COMMON albo `max(x, 0.0)`. Nie nazywaj zmiennych `sq`.
 - Wydajność: budżet pikseli 1.5 MP (dotyk) / 3.2 MP (desktop), auto-obniżanie `quality`,
   gdy średnia klatka > 24 ms.
