@@ -100,6 +100,10 @@ Fizyka: stały krok 1/120 s, 3 podkroki, PBD. Płyn: domena = obszar wody.
 - [x] Pełny potok graficzny (powyżej), dźwięk, haptyka (Android), pauza, zapis/wznowienie
 - [x] Tryb „attract” w menu (AI wrzuca krople w tle)
 - [x] PWA: manifest + service worker (runtime cache) → działa offline po 1. wizycie
+- [x] Detale: rozbryzgi nad powierzchnią, fala powierzchni (1D), menisk, bąbelki
+  opływające krople, pył w wodzie adwekowany polem prędkości, kaustyki, promienie światła,
+  odbicie słoja w blacie i kolorowa kaustyka na stole, paralaksa (żyroskop/mysz),
+  wahadłowa pipeta z gumową gruszką (ściska się przy upuszczeniu), nadruk podziałki
 
 ## Roadmapa (kolejność)
 1. Strojenie balansu (rozkład tierów, promienie wybuchu, punkty) po testach na telefonie.
@@ -118,4 +122,17 @@ npm install
 npm run dev      # http://localhost:5194 (patrz .claude/launch.json) lub vite domyślnie
 npm run build    # dist/
 ```
-Debug: `?debug` w URL pokazuje FPS i skalę renderowania.
+Debug: `?debug` w URL pokazuje FPS i skalę renderowania oraz wystawia na `window`:
+`__r` (Renderer), `__game()` (bieżąca gra), `__tick(n, dt)` — synchroniczne klatki
+(przydatne do automatycznych testów, gdy karta jest w tle i rAF jest wstrzymany).
+Przykład scenariusza: `__game().makeDrop(Ink, tier, x, y)` + `drops.push(...)` + `__tick(100)`.
+
+## Notatki techniczne / pułapki
+- Kolory kropli to absorbancja (Beer-Lambert), nie RGB — scena jest podświetlona od tyłu
+  (lightbox), więc wszystko, co ma być widać „w atramencie”, musi mieć jasne tło za sobą.
+  Dlatego sloty HUD (zapas/dalej) mają podświetlone szalki Petriego rysowane w shaderze tła.
+- Pole metaballi: kolor ważony w², powierzchnia z sumy w; wysokość odzyskiwana z pola
+  (odwrócenie falloffu) → normalne. `FIELD_S` steruje grubością „szyjek” między kroplami.
+- Płyn: prędkość w texelach siatki/s; splaty są batchowane (24 na przebieg).
+- Wydajność: budżet pikseli 1.5 MP (dotyk) / 3.2 MP (desktop), auto-obniżanie `quality`,
+  gdy średnia klatka > 24 ms.

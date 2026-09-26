@@ -217,7 +217,7 @@ export class Renderer {
     const xMin = -0.55;
     const xMax = JAR_W + 0.55;
     const yMin = -1.5;
-    const yMax = TIP_Y + 3.35;
+    const yMax = TIP_Y + (portrait ? 3.35 : 3.8);
     const availH = cssH - hudPx - 6;
     const s = Math.min(cssW / (xMax - xMin), availH / (yMax - yMin));
     this.sPx = s;
@@ -573,15 +573,24 @@ export class Renderer {
 
     // --- bubbles
     const bs = game.bubbles;
-    const nb = Math.min(bs.length, 256);
+    let nb = 0;
+    for (const b of bs) {
+      if (nb >= 256) break;
+      this.bub[nb * 4] = b.x;
+      this.bub[nb * 4 + 1] = b.y;
+      this.bub[nb * 4 + 2] = b.r * (1 + 0.08 * Math.sin(b.ph * 1.3));
+      this.bub[nb * 4 + 3] = Math.min(1, b.life * 8);
+      nb++;
+    }
+    for (const b of game.spray) {
+      if (nb >= 256) break;
+      this.bub[nb * 4] = b.x;
+      this.bub[nb * 4 + 1] = b.y;
+      this.bub[nb * 4 + 2] = b.r;
+      this.bub[nb * 4 + 3] = 0.9;
+      nb++;
+    }
     if (nb > 0) {
-      for (let i = 0; i < nb; i++) {
-        const b = bs[i];
-        this.bub[i * 4] = b.x;
-        this.bub[i * 4 + 1] = b.y;
-        this.bub[i * 4 + 2] = b.r * (1 + 0.08 * Math.sin(b.ph * 1.3));
-        this.bub[i * 4 + 3] = Math.min(1, b.life * 8);
-      }
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       p.bubble.use().setAll({ uScene: this.sceneA.tex, uW2U: w2u, uRes: [this.rw, this.rh] });

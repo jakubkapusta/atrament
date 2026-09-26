@@ -61,12 +61,12 @@ void main(){
     float fi = float(i);
     float side = hash12(vec2(fi, 2.2)) < 0.5 ? -1.0 : 1.0;
     vec2 bp = pc + vec2(side * (uJar.x * 0.5 + 2.5 + hash12(vec2(fi, 1.7)) * 14.0), (hash12(vec2(fi, 8.3)) - 0.4) * 18.0);
-    float br = 0.35 + hash12(vec2(fi, 3.1)) * 0.8;
+    float br = 0.3 + hash12(vec2(fi, 3.1)) * 0.6;
     float hd = hexd((wb - bp) / br);
-    float disc = smoothstep(1.0, 0.9, hd);
-    float ring = smoothstep(0.75, 1.0, hd) * disc;
+    float disc = smoothstep(1.0, 0.72, hd);
+    float ring = smoothstep(0.6, 0.95, hd) * disc;
     vec3 bc = mix(vec3(1.0, 0.6, 0.28), vec3(0.45, 0.6, 1.0), step(0.65, hash12(vec2(fi, 5.5))));
-    room += bc * (disc * 0.05 + ring * 0.05) * (0.3 + hash12(vec2(fi, 9.9)));
+    room += bc * (disc * 0.022 + ring * 0.025) * (0.3 + hash12(vec2(fi, 9.9)));
   }
   vec3 col = mix(room, panel, p);
   // glossy table below the jar: reflects the panel

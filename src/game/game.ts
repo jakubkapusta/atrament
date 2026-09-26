@@ -132,6 +132,7 @@ export class Game {
   rng: RNG;
   drops: Drop[] = [];
   bubbles: Bubble[] = [];
+  spray: Bubble[] = []; // water droplets thrown above the surface by splashes
   merges: Merge[] = [];
   events: GameEvent[] = [];
   surface = new Surface();
@@ -263,6 +264,7 @@ export class Game {
     this.reactions();
     this.updateDrops(dt);
     this.updateBubbles(dt);
+    this.updateSpray(dt);
     this.surface.step(dt);
     if (this.comboT > 0) {
       this.comboT -= dt;
@@ -487,6 +489,19 @@ export class Game {
         vx: (this.rng.next() - 0.5) * 1.2,
         vy: -this.rng.next() * 1.5,
         ph: this.rng.next() * 6.28,
+        life: 0,
+      });
+    }
+    const ns = Math.min(14, Math.floor(sp * d.r * 2.2));
+    for (let i = 0; i < ns; i++) {
+      const side = this.rng.next() < 0.5 ? -1 : 1;
+      this.spray.push({
+        x: d.x + side * d.r * (0.5 + this.rng.next() * 0.6),
+        y: WATER + 0.02,
+        r: 0.025 + this.rng.next() ** 2 * 0.06,
+        vx: side * (0.6 + this.rng.next() * 2.2),
+        vy: 2 + this.rng.next() * sp * 0.45,
+        ph: 0,
         life: 0,
       });
     }
@@ -741,6 +756,23 @@ export class Game {
   spawnBubble(x: number, y: number, r: number, vx = 0, vy = 0) {
     if (this.bubbles.length > 220 || y > WATER - 0.05) return;
     this.bubbles.push({ x, y, r, vx, vy, ph: this.rng.next() * 6.28, life: 0 });
+  }
+
+  private updateSpray(dt: number) {
+    const sp = this.spray;
+    for (let i = sp.length - 1; i >= 0; i--) {
+      const s = sp[i];
+      s.life += dt;
+      s.vy -= G_AIR * 0.8 * dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      if (s.x < s.r || s.x > JAR_W - s.r) s.vx *= -0.5;
+      s.x = clamp(s.x, s.r, JAR_W - s.r);
+      if (s.vy < 0 && s.y < WATER + this.surface.at(s.x)) {
+        this.surface.impulse(s.x, -s.r * 6, 0.12);
+        sp.splice(i, 1);
+      }
+    }
   }
 
   private updateBubbles(dt: number) {

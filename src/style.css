@@ -100,9 +100,8 @@ button {
 
 #combo {
   position: absolute;
-  left: 50%;
-  top: calc(var(--safe-top) + 14px);
-  transform: translateX(-50%);
+  left: 14px;
+  top: calc(var(--safe-top) + 86px);
   font-family: var(--serif);
   font-style: italic;
   font-weight: 600;
@@ -538,5 +537,9 @@ h2 {
   }
   #score {
     font-size: 48px;
+  }
+  #combo {
+    left: 24px;
+    top: 104px;
   }
 }

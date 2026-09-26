@@ -1,9 +1,16 @@
-import '@fontsource/fraunces/600.css';
-import '@fontsource/fraunces/600-italic.css';
-import '@fontsource/inter/400.css';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/inter/700.css';
+// latin + latin-ext only (Polish diacritics), keeps the offline bundle small
+import '@fontsource/fraunces/latin-600.css';
+import '@fontsource/fraunces/latin-ext-600.css';
+import '@fontsource/fraunces/latin-600-italic.css';
+import '@fontsource/fraunces/latin-ext-600-italic.css';
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-ext-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter/latin-ext-500.css';
+import '@fontsource/inter/latin-600.css';
+import '@fontsource/inter/latin-ext-600.css';
+import '@fontsource/inter/latin-700.css';
+import '@fontsource/inter/latin-ext-700.css';
 import './style.css';
 
 import { Game, JAR_W, type Mode } from './game/game';
