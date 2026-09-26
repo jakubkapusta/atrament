@@ -543,3 +543,9 @@ h2 {
     top: 104px;
   }
 }
+
+#how .card,
+#pause .card,
+#over .card {
+  background: var(--paper-strong);
+}
