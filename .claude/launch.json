@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "atrament",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5194", "--strictPort"],
+      "port": 5194
+    }
+  ]
+}

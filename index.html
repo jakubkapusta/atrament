@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0c0b0d" />
+    <meta name="description" content="Atrament — łącz krople atramentu w szklanym słoju." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Atrament</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon-180.png" />
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="ui">
+      <header id="hud" class="hidden">
+        <div class="score-box">
+          <div id="score">0</div>
+          <div id="best">rekord 0</div>
+        </div>
+        <div id="combo"></div>
+        <div class="slots">
+          <button id="hold" class="slot" aria-label="Zapas — odłóż kroplę"><span>zapas</span></button>
+          <div id="next" class="slot"><span>dalej</span></div>
+          <button id="pauseBtn" class="icon-btn" aria-label="Pauza">
+            <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="5" width="4" height="14" rx="1.2" /><rect x="14" y="5" width="4" height="14" rx="1.2" /></svg>
+          </button>
+        </div>
+      </header>
+      <div id="popups"></div>
+      <div id="toast"></div>
+
+      <section id="menu" class="screen">
+        <div class="title">
+          <h1>Atrament</h1>
+          <p class="tag">kropla po kropli</p>
+        </div>
+        <div class="card">
+          <div class="modes">
+            <button class="mode" data-mode="classic">
+              <strong>Klasyczny</strong>
+              <small>nie przepełnij słoja</small>
+              <em data-best="classic"></em>
+            </button>
+            <button class="mode" data-mode="murky">
+              <strong>Mętny</strong>
+              <small>woda mętnieje, czerń ją czyści</small>
+              <em data-best="murky"></em>
+            </button>
+          </div>
+          <button id="continueBtn" class="wide hidden">Kontynuuj grę</button>
+          <div class="row">
+            <button id="howBtn" class="link">Jak grać</button>
+            <button class="link mute-toggle">Dźwięk: wł.</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="how" class="screen hidden">
+        <div class="card how">
+          <h2>Jak grać</h2>
+          <ul>
+            <li><b>Przeciągnij</b> i <b>puść</b>, żeby upuścić kroplę z pipety.</li>
+            <li>Reagują tylko krople <b>tej samej wielkości</b>.</li>
+            <li>Ten sam kolor — kropla rośnie.</li>
+            <li class="eq"><i class="c-r"></i>+<i class="c-y"></i>=<i class="c-o"></i> <i class="c-y"></i>+<i class="c-b"></i>=<i class="c-g"></i> <i class="c-b"></i>+<i class="c-r"></i>=<i class="c-p"></i></li>
+            <li class="eq"><i class="c-g"></i>+<i class="c-r"></i> <i class="c-o"></i>+<i class="c-b"></i> <i class="c-p"></i>+<i class="c-y"></i> = <i class="c-k"></i> — czerń wybucha i czyści okolicę.</li>
+            <li class="eq"><i class="c-o"></i>+<i class="c-g"></i> = <i class="c-m"></i> — muł. Zniknie tylko w wybuchu.</li>
+            <li>Nie dopuść, by krople stały nad linią <b class="max">MAX</b>.</li>
+            <li><b>Zapas</b>: dotknij slotu, żeby odłożyć kroplę na później.</li>
+            <li>Szukaj rzadkich atramentów: potrójna fuzja, reakcja w locie…</li>
+          </ul>
+          <button class="wide back">Rozumiem</button>
+        </div>
+      </section>
+
+      <section id="pause" class="screen hidden">
+        <div class="card">
+          <h2>Pauza</h2>
+          <button id="resumeBtn" class="wide primary">Wróć do gry</button>
+          <button id="restartBtn" class="wide">Od nowa</button>
+          <button id="menuBtn" class="wide">Menu</button>
+          <div class="row"><button class="link mute-toggle">Dźwięk: wł.</button></div>
+        </div>
+      </section>
+
+      <section id="over" class="screen hidden">
+        <div class="card">
+          <p class="tag">słój pełny</p>
+          <div id="finalScore">0</div>
+          <p id="newBest" class="hidden">nowy rekord!</p>
+          <div id="stats"></div>
+          <button id="againBtn" class="wide primary">Jeszcze raz</button>
+          <button id="overMenuBtn" class="wide">Menu</button>
+        </div>
+      </section>
+      <div id="debug" class="hidden"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
