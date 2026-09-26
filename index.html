@@ -25,11 +25,22 @@
         <div class="slots">
           <button id="hold" class="slot" aria-label="Zapas — odłóż kroplę"><span>zapas</span></button>
           <div id="next" class="slot"><span>dalej</span></div>
+          <button id="rulesBtn" class="icon-btn" aria-label="Ściąga kolorów"><i class="wheel"></i></button>
           <button id="pauseBtn" class="icon-btn" aria-label="Pauza">
             <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="5" width="4" height="14" rx="1.2" /><rect x="14" y="5" width="4" height="14" rx="1.2" /></svg>
           </button>
         </div>
       </header>
+      <aside id="rules" class="hidden">
+        <div class="rules-now"></div>
+        <div class="rules-grid">
+          <p><i class="chip c-r"></i>+<i class="chip c-y"></i>=<i class="chip c-o"></i><i class="chip c-y"></i>+<i class="chip c-b"></i>=<i class="chip c-g"></i><i class="chip c-b"></i>+<i class="chip c-r"></i>=<i class="chip c-p"></i></p>
+          <p><i class="chip c-g"></i>+<i class="chip c-r"></i> <i class="chip c-o"></i>+<i class="chip c-b"></i> <i class="chip c-p"></i>+<i class="chip c-y"></i> = <i class="chip c-k"></i> <span>wybuch</span></p>
+          <p><i class="chip c-o"></i>+<i class="chip c-g"></i> <span>(dwa pochodne)</span> = <i class="chip c-m"></i> <span>muł</span></p>
+          <p class="small">Reagują tylko krople tej samej wielkości. Ten sam kolor — kropla rośnie.</p>
+          <p class="small"><i class="chip c-gold"></i>3 naraz · <i class="chip c-opal"></i>reakcja w locie · <i class="chip c-pearl"></i>dwie duże tego samego koloru</p>
+        </div>
+      </aside>
       <div id="popups"></div>
       <div id="toast"></div>
 

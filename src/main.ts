@@ -13,8 +13,9 @@ import '@fontsource/inter/latin-700.css';
 import '@fontsource/inter/latin-ext-700.css';
 import './style.css';
 
-import { Game, JAR_W, type Mode } from './game/game';
-import { INKS, Ink } from './game/inks';
+import { Game, JAR_W, TUNING, type Mode } from './game/game';
+import { INKS, Ink, react } from './game/inks';
+import { chip } from './ui/chips';
 import { Renderer, type UISlot } from './render/renderer';
 import { Audio } from './audio/audio';
 import { clamp, store } from './core/math';
@@ -130,6 +131,50 @@ function slots(): UISlot[] {
     { x: next.left + next.width / 2, y: next.top + next.height / 2, size: next.width, piece: game.queue[0] ?? null },
   ];
 }
+
+// ---------------------------------------------------------------- rules cheat sheet
+const rulesEl = $('rules');
+const rulesBtn = $('rulesBtn');
+const rulesNow = rulesEl.querySelector('.rules-now') as HTMLElement;
+let rulesPinned = false;
+let rulesHover = false;
+let rulesFor = '';
+
+function rulesOpen() {
+  return (rulesPinned || rulesHover) && (state === 'play' || state === 'pause');
+}
+
+function updateRules() {
+  const open = rulesOpen();
+  rulesEl.classList.toggle('hidden', !open);
+  rulesBtn.classList.toggle('on', open);
+  renderer.hint = open;
+  if (!open || !game.current) return;
+  const cur = game.current;
+  const key = `${cur.ink}:${cur.tier}`;
+  if (key === rulesFor) return;
+  rulesFor = key;
+  const parts: string[] = [];
+  for (const other of [Ink.R, Ink.Y, Ink.B, Ink.O, Ink.G, Ink.P]) {
+    const res = react(cur.ink, other, cur.tier, TUNING.pearlTier);
+    if (!res) continue;
+    const label = res.kind === 'black' ? ' wybuch' : res.kind === 'mud' ? ' muł' : '';
+    parts.push(`<span>+${chip(other)}→${chip(res.ink)}${label}</span>`);
+  }
+  rulesNow.innerHTML = `<b>Twoja kropla</b> ${chip(cur.ink, true)} <span>z kroplą tej samej wielkości:</span><div class="row2">${parts.join('') || '<span>nic nie reaguje</span>'}</div>`;
+}
+
+rulesBtn.addEventListener('pointerenter', (e) => {
+  if (e.pointerType === 'mouse') rulesHover = true;
+});
+rulesBtn.addEventListener('pointerleave', (e) => {
+  if (e.pointerType === 'mouse') rulesHover = false;
+});
+rulesBtn.addEventListener('click', () => {
+  audio.ui();
+  rulesPinned = !rulesPinned;
+  rulesFor = '';
+});
 
 // ---------------------------------------------------------------- game flow
 function startGame(mode: Mode, restore = false) {
@@ -465,6 +510,7 @@ function tick(dt: number) {
   const aimAlpha = state === 'play' && game.canRelease() ? (aiming ? 1 : 0.6) : 0;
   renderer.render(game, running ? dt : 0, slots(), aimAlpha);
   if (state === 'play' || state === 'pause') updateHud();
+  updateRules();
 
   if (debug) {
     fpsAcc += dt;

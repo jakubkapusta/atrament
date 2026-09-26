@@ -2,8 +2,8 @@ import { GLX, Program, type Double, type MRT, type Target } from '../gl/gl';
 import { Fluid } from './fluid';
 import * as S from './shaders';
 import { makeLabelCanvas } from './label';
-import { DANGER, Game, JAR_H, JAR_W, PIP_LEN, TIER_R, TIP_Y, WATER, type Drop, type GameEvent } from '../game/game';
-import { INKS, Ink, type Vec3 } from '../game/inks';
+import { DANGER, Game, JAR_H, JAR_W, PIP_LEN, TIER_R, TIP_Y, TUNING, WATER, type Drop, type GameEvent } from '../game/game';
+import { INKS, Ink, react, type Vec3 } from '../game/inks';
 import { clamp } from '../core/math';
 
 const FIELD_S = 1.28; // metaball influence radius (in drop radii)
@@ -84,6 +84,8 @@ export class Renderer {
   private bub = new Float32Array(256 * 4);
   private moteVAO: WebGLVertexArrayObject;
   mode: 'classic' | 'murky' | 'attract' = 'attract';
+  /** highlight drops that react with the current piece (while the cheat sheet is open) */
+  hint = false;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.g = new GLX(canvas);
@@ -393,12 +395,17 @@ export class Renderer {
 
   private buildInstances(game: Game, slots: UISlot[]) {
     let n = 0;
+    const hintPiece = this.hint ? game.current : null;
     for (const d of game.drops) {
       if (n >= MAX_INST - 4) break;
       let r = d.r;
       if (d.state === 2 && d.dissolveDelay <= 0) r *= 1 - clamp(d.dissolveT, 0, 1) * 0.5;
       const heat = d.ink === Ink.K ? clamp(1 - d.fuse / 1.6, 0, 1) : 0;
-      this.writeDrop(n++, d.x, d.y, r, d.seed, d, d.ink === Ink.K ? 0.25 + heat * 0.75 : 0);
+      let flash = d.flash;
+      if (hintPiece && d.state === 0 && d.tier === hintPiece.tier && react(d.ink, hintPiece.ink, d.tier, TUNING.pearlTier)) {
+        flash = Math.max(flash, 0.22 + 0.18 * Math.sin(this.time * 6));
+      }
+      this.writeDrop(n++, d.x, d.y, r, d.seed, { ...d, flash }, d.ink === Ink.K ? 0.25 + heat * 0.75 : 0);
     }
     // drop forming on the pipette tip
     if (game.current && game.pip.grow > 0.02 && !game.over) {
