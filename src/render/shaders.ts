@@ -32,7 +32,8 @@ float caustic(vec2 p, float t){
   return clamp(pow(abs(c), 8.0), 0.0, 3.0);
 }
 // perspective openness of horizontal circles on the jar at height y (camera slightly above)
-float ellE(float y, float H){ return 0.3 * (0.35 + 0.65 * clamp(y / H, 0.0, 1.2)); }
+// camera is above the jar looking slightly down: circles further below the eye open up more
+float ellE(float y, float H){ return mix(0.42, 0.2, clamp(y / H, 0.0, 1.2)); }
 `;
 
 // ------------------------------------------------------------------ background
@@ -108,7 +109,8 @@ void main(){
   float W = uJar.x, H = uJar.y;
   float cx = W * 0.5;
   float u = (w.x - cx) / cx;
-  if (abs(u) >= 1.0 || w.y < -0.02 || w.y > H + 0.6) { o = texture(uBg, vUv); return; }
+  float floorF = -ellE(0.0, H) * sqrt(max(1.0 - u * u, 0.0));
+  if (abs(u) >= 1.0 || w.y < floorF - 0.01 || w.y > H + 0.6) { o = texture(uBg, vUv); return; }
   float wave = texture(uWave, vec2(w.x / W, 0.5)).r;
   float wl = uJar.z + wave;
   float chord = sqrt(1.0 - u * u);
@@ -519,7 +521,7 @@ void main(){
   float s = sqrt(max(1.0 - u * u, 0.0));
   float px = 1.0 / uPx;
   float eB = ellE(0.0, H);
-  float yBot = -BASE - eB * s;
+  float yBot = -BASE - eB * s; // outer bottom edge of the thick base
   float eT = ellE(H, H);
   float yTopB = H + eT * s;
 
@@ -544,12 +546,14 @@ void main(){
   if (au < 1.0 && w.y > yBot - px && w.y < yTopB + 0.12) {
     float ui = (w.x - cx) / cx;
     bool wall = abs(ui) > 1.0;
-    bool base = w.y < 0.0;
+    float si0 = sqrt(max(1.0 - ui * ui, 0.0));
+    float yFloorF = -eB * si0; // front edge of the inner floor (seen from above)
+    bool base = w.y < yFloorF || wall && w.y < 0.0;
     float tw = wall ? (au - cx / Ro) / (1.0 - cx / Ro) : 0.0;
     vec2 off = vec2(0.0);
     if (wall) off.x = -sign(u) * (0.1 + 0.55 * tw * tw);
     else off.x = -u * u * u * 0.05;
-    if (base) { off.y = 0.04; off.x -= u * 0.3; }
+    if (base) { off.y = (yFloorF - w.y) * 1.3 + 0.08; off.x -= u * 0.3; }
     vec3 g = sceneAt(w + off);
     if (base) {
       vec2 sm = vec2(0.22, 0.0);
@@ -565,14 +569,18 @@ void main(){
       g += vec3(1.0) * exp(-sq((tw - 0.965) / 0.02)) * 0.45;
     }
     if (base) {
-      float yFl = -eB * 0.6 * s;
-      float topLine = exp(-sq((w.y - yFl) / 0.025));
-      g += vec3(0.9, 1.0, 0.95) * topLine * 0.35;
       g += vec3(0.85, 1.0, 0.92) * exp(-sq((w.y - yBot) / 0.035)) * 0.9;
       g *= 0.85 + 0.35 * caustic(w * 3.3 + 2.0, uTime * 0.5);
+      g *= 1.0 - 0.25 * smoothstep(yBot + 0.1, yFloorF, w.y); // darker towards the floor edge
     }
     float edgeAA = clamp((1.0 - au) * Ro / px, 0.0, 1.0) * clamp((w.y - yBot) / px, 0.0, 1.0);
     col = mix(col, g, edgeAA);
+    if (!wall) {
+      // inner floor: bright front edge where the thick base begins, faint back edge behind
+      col += vec3(0.9, 1.0, 0.95) * exp(-sq((w.y - yFloorF) / (px * 1.4 + 0.012))) * 0.55;
+      col *= 1.0 - 0.25 * exp(-sq((w.y - (yFloorF - 0.05)) / 0.04));
+      col += vec3(0.9, 1.0, 0.95) * exp(-sq((w.y - eB * si0) / (px + 0.01))) * 0.12;
+    }
 
     // printed graduation (wraps around the cylinder)
     if (!base && w.y < H) {
@@ -598,7 +606,7 @@ void main(){
     if (!wall) {
       float wave = texture(uWave, vec2(w.x / W, 0.5)).r;
       float si = sqrt(max(1.0 - ui * ui, 0.0));
-      float eW = ellE(uJar.z, H) * 0.5;
+      float eW = ellE(uJar.z, H) * 0.8;
       float menis = 0.08 * exp(-(1.0 - abs(ui)) * 24.0);
       float yF = uJar.z + wave - eW * si + menis;
       float yB = uJar.z + wave * 0.5 + eW * si + menis;

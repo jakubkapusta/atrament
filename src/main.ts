@@ -59,10 +59,15 @@ try {
 const audio = new Audio();
 audio.setMuted(store.get('atrament.muted', false));
 const profile = loadProfile();
+if (!unlockedLiquids(profile).includes(profile.liquid)) profile.liquid = 'water';
 saveProfile(profile);
 
 let state: State = 'menu';
-let game = new Game('attract', { discovered: profile.discovered });
+/** Demo game running behind the menus — in the liquid currently chosen. */
+function attractGame() {
+  return new Game('attract', { discovered: profile.discovered, liquid: profile.liquid });
+}
+let game = attractGame();
 let session: Session | null = null;
 let pending: Session | null = null;
 let tracker: OrderTracker | null = null;
@@ -289,7 +294,7 @@ function toMenu() {
   state = 'menu';
   session = null;
   hud.classList.add('hidden');
-  game = new Game('attract', { discovered: profile.discovered });
+  game = attractGame();
   show('menu');
   refreshMenu();
 }
@@ -459,7 +464,7 @@ function endSession(won: boolean) {
 function openOrders() {
   state = 'menu';
   hud.classList.add('hidden');
-  if (game.mode !== 'attract') game = new Game('attract', { discovered: profile.discovered });
+  if (game.mode !== 'attract') game = attractGame();
   const list = $('orderList');
   const tile = (l: Level, i: number) => {
     const done = profile.orders[l.id];
@@ -489,7 +494,7 @@ let introLevel: Level | null = null;
 function openOrder(l: Level) {
   state = 'menu';
   hud.classList.add('hidden');
-  if (game.mode !== 'attract') game = new Game('attract', { discovered: profile.discovered });
+  if (game.mode !== 'attract') game = attractGame();
   introLevel = l;
   const i = LEVELS.indexOf(l);
   $('oiNum').textContent = `zlecenie ${i + 1} z ${LEVELS.length}${l.liquid ? ` · ${LIQUIDS[l.liquid].name.toLowerCase()}` : ''}${l.murky ? ' · mętna woda' : ''}`;
@@ -685,6 +690,11 @@ const cycleLiquid = (dir: number) => {
   const i = Math.max(0, open.indexOf(profile.liquid));
   profile.liquid = open[Math.min(open.length - 1, Math.max(0, i + dir))];
   saveProfile(profile);
+  if (game.mode === 'attract') {
+    // switch the demo jar to the new liquid in place (drops keep falling)
+    game.liquid = LIQUIDS[profile.liquid];
+    game.surface.c2 = 30 * game.liquid.wave * game.liquid.wave;
+  }
   audio.ui();
   refreshMenu();
 };

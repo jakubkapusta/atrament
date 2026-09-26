@@ -183,6 +183,10 @@ i n kropel w losowe miejsca), `__tick(n, dt)` — synchroniczne klatki
 Przykład scenariusza: `__game().makeDrop(Ink, tier, x, y)` + `drops.push(...)` + `__tick(100)`.
 
 ## Notatki techniczne / pułapki
+- Perspektywa słoja: kamera nad słojem patrzy lekko w dół, więc elipsy przekrojów otwierają się
+  tym bardziej, im niżej leżą (`ellE(y)`: dno 0.42 → rant 0.2). Fizyka jest płaska (środkowy
+  przekrój), dno fizyczne y=0 leży w połowie głębokości elipsy dna; woda sięga do jej przedniej
+  krawędzi, niżej jest gruba podstawa.
 - Kolory kropli to absorbancja (Beer-Lambert), nie RGB — scena jest podświetlona od tyłu
   (lightbox), więc wszystko, co ma być widać „w atramencie”, musi mieć jasne tło za sobą.
   Dlatego sloty HUD (zapas/dalej) mają podświetlone szalki Petriego rysowane w shaderze tła.
