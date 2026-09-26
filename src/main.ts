@@ -16,7 +16,7 @@ import './style.css';
 import { Game, JAR_W, TUNING } from './game/game';
 import { INKS, Ink, SPECIAL, react } from './game/inks';
 import { LIQUIDS, type LiquidId } from './game/liquids';
-import { LEVELS, OrderTracker, goalText, setupFor, type Level } from './game/orders';
+import { LEVELS, OrderTracker, forbidText, goalText, orderGame, type Level } from './game/orders';
 import {
   DAILY_DROPS, bestKey, dailyKey, dailySeed, dailyStreak, loadProfile, saveProfile, unlockedLiquids,
 } from './game/progress';
@@ -140,7 +140,8 @@ function updateHud() {
   else if (s) bestEl.textContent = `rekord ${Math.max(profile.best[bestKey(s.kind, s.liquid)] || 0, game.score)}`;
   if (s?.kind === 'order' && tracker) {
     const pr = tracker.progress(game);
-    goalEl.textContent = `${goalText(s.level!.goal)}${pr.text ? ` · ${pr.text}` : ''}`;
+    const fb = forbidText(s.level!);
+    goalEl.textContent = `${goalText(s.level!.goal)}${pr.text ? ` · ${pr.text}` : ''}${fb ? ` · ${fb}` : ''}`;
     goalEl.classList.toggle('done', pr.done);
   }
   const c = game.combo;
@@ -256,13 +257,8 @@ function buildGame(s: Session): Game {
       const seed = dailySeed(s.dateKey!);
       return new Game('daily', { seed: seed + 1, pieceSeed: seed, dropLimit: DAILY_DROPS, noLose: true, discovered });
     }
-    case 'order': {
-      const l = s.level!;
-      return new Game('order', {
-        seed: 4242, pieceSeed: l.seed ?? 1, dropLimit: l.moves, queue: l.queue, setup: setupFor(l),
-        liquid: l.liquid, murky: l.murky, discovered,
-      });
-    }
+    case 'order':
+      return orderGame(s.level!, discovered);
     default:
       return new Game(s.kind, { liquid: s.liquid, discovered });
   }
@@ -433,7 +429,7 @@ function endSession(won: boolean) {
       showResult({
         tag: `zlecenie ${idx + 1} · nie tym razem`,
         score: l.name,
-        stats: `<span>${goalText(l.goal)}</span>`,
+        stats: `<span>${tracker?.failed ?? goalText(l.goal)}</span>`,
         primary: ['Spróbuj ponownie', again],
         secondary: ['Lista zleceń', openOrders],
       });
@@ -448,13 +444,18 @@ function openOrders() {
   hud.classList.add('hidden');
   if (game.mode !== 'attract') game = new Game('attract', { discovered: profile.discovered });
   const list = $('orderList');
-  list.innerHTML = LEVELS.map((l, i) => {
+  const tile = (l: Level, i: number) => {
     const done = profile.orders[l.id];
-    const unlocked = i === 0 || !!profile.orders[LEVELS[i - 1].id];
-    return `<button class="order-tile${unlocked ? '' : ' locked'}" data-i="${i}" ${unlocked ? '' : 'disabled'}>
+    const tutorialsDone = LEVELS.filter((x) => x.section === 'nauka' && profile.orders[x.id]).length;
+    const firstMaster = l.section === 'mistrz' && LEVELS[i - 1]?.section !== 'mistrz';
+    const unlocked = i === 0 || !!profile.orders[LEVELS[i - 1].id] || (firstMaster && tutorialsDone >= 8);
+    return `<button class="order-tile${unlocked ? '' : ' locked'}${l.section === 'mistrz' ? ' master' : ''}" data-i="${i}" ${unlocked ? '' : 'disabled'}>
       <span class="n">${i + 1}</span><span class="nm">${l.name}</span>
       <span class="st">${unlocked ? starsHtml(done?.stars ?? 0) : '🔒'}</span></button>`;
-  }).join('');
+  };
+  const section = (name: string, key: string) =>
+    `<h3 class="order-sec">${name}</h3><div class="order-grid">${LEVELS.map((l, i) => (l.section === key ? tile(l, i) : '')).join('')}</div>`;
+  list.innerHTML = section('Nauka', 'nauka') + section('Mistrzowskie', 'mistrz');
   list.querySelectorAll<HTMLButtonElement>('.order-tile').forEach((b) =>
     b.addEventListener('click', () => {
       audio.ui();
@@ -474,7 +475,8 @@ function openOrder(l: Level) {
   $('oiNum').textContent = `zlecenie ${i + 1} z ${LEVELS.length}${l.liquid ? ` · ${LIQUIDS[l.liquid].name.toLowerCase()}` : ''}${l.murky ? ' · mętna woda' : ''}`;
   $('oiName').textContent = l.name;
   $('oiDesc').textContent = l.desc;
-  $('oiGoal').textContent = `${goalText(l.goal)} · limit ${l.moves} kropel`;
+  const fb = forbidText(l);
+  $('oiGoal').textContent = `${goalText(l.goal)}${fb ? ` · ${fb}` : ''} · limit ${l.moves} kropel`;
   show('orderIntro');
 }
 
@@ -553,7 +555,7 @@ function processEvents() {
       case 'finish':
         if (session && live) {
           audio.discover();
-          endSession(!tracker || tracker.progress(game).done);
+          endSession(!tracker || (tracker.progress(game).done && !tracker.failed));
         }
         break;
       case 'gameover':
@@ -566,7 +568,10 @@ function processEvents() {
   if (game.drops.some((d) => d.ink === Ink.K && d.state === 0)) audio.fuse();
   // orders: goal reached → short celebration, then finish
   if (tracker && state === 'play' && !game.over) {
-    if (winTimer < 0 && tracker.progress(game).done) winTimer = 1.1;
+    if (tracker.failed) {
+      winTimer = -1;
+      game.finish();
+    } else if (winTimer < 0 && tracker.progress(game).done) winTimer = 1.1;
   }
 }
 

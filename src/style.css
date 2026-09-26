@@ -795,10 +795,35 @@ h2 {
   touch-action: pan-y;
 }
 
-.order-list {
+.order-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.order-sec {
+  margin: 14px 0 8px;
+  font-family: var(--serif);
+  font-size: 17px;
+  text-align: left;
+}
+
+.order-sec:first-child {
+  margin-top: 0;
+}
+
+.order-tile.master {
+  background: rgba(27, 24, 22, 0.88);
+  color: #f6f1e8;
+  border-color: rgba(0, 0, 0, 0.6);
+}
+
+.order-tile.master .nm {
+  color: rgba(246, 241, 232, 0.7);
+}
+
+.order-tile.master .st .off {
+  color: rgba(255, 255, 255, 0.2);
 }
 
 .order-tile {

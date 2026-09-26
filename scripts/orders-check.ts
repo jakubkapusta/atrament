@@ -1,77 +1,45 @@
-// Verifies that every order (puzzle) is solvable within its move limit.
-//   npm run orders -- [--tries 300] [--level pryzmat]
-// Random-position attempts approximate "a player who tries things"; greedy is a sanity check.
+// Verifies every order:
+//  - master orders: the stored solution replays successfully (careful play: wait for calm)
+//  - all orders: success rate of a careful random player (difficulty estimate)
+//   npm run orders -- [--tries 200] [--level pryzmat]
 
-import { Game } from '../src/game/game';
-import { LEVELS, OrderTracker, setupFor, type Level } from '../src/game/orders';
-import { greedyBrain, placeAndRelease, randomBrain, type Brain } from '../src/game/ai';
+import { LEVELS, OrderTracker, orderGame } from '../src/game/orders';
+import { placeAndRelease } from '../src/game/ai';
+import { randomRate, settle } from './orders-solve';
 
 const args = process.argv.slice(2);
 const arg = (k: string, d: string) => {
   const i = args.indexOf(k);
   return i >= 0 ? args[i + 1] : d;
 };
-const tries = +arg('--tries', '300');
+const tries = +arg('--tries', '200');
 const only = arg('--level', '');
-
-function attempt(level: Level, brain: Brain, seed: number) {
-  const g = new Game(level.murky ? 'order' : 'order', {
-    seed,
-    pieceSeed: level.seed ?? seed,
-    dropLimit: level.moves,
-    queue: level.queue,
-    setup: setupFor(level),
-    liquid: level.liquid,
-    murky: level.murky,
-  });
-  g.fx = false;
-  const tr = new OrderTracker(level);
-  let wait = 0.6;
-  for (let t = 0; t < 400; t += 1 / 60) {
-    g.update(1 / 60);
-    for (const e of g.events) tr.onEvent(e);
-    g.events.length = 0;
-    if (tr.progress(g).done) return { ok: true, moves: g.dropsUsed };
-    if (g.over) break;
-    if (g.canRelease()) {
-      wait -= 1 / 60;
-      if (wait <= 0) {
-        const c = brain.choose(g);
-        placeAndRelease(g, c.x);
-        wait = 0.6;
-      }
-    }
-  }
-  return { ok: false, moves: g.dropsUsed };
-}
+let bad = 0;
 
 for (const level of LEVELS) {
   if (only && level.id !== only) continue;
-  let ok = 0;
-  const moves: number[] = [];
-  for (let i = 0; i < tries; i++) {
-    const r = attempt(level, randomBrain(i * 7919 + 1), i + 1);
-    if (r.ok) {
-      ok++;
-      moves.push(r.moves);
+  let replay = '';
+  if (level.solution) {
+    const g = orderGame(level);
+    g.fx = false;
+    const t = new OrderTracker(level);
+    settle(g, t);
+    for (const x of level.solution) {
+      if (!g.current || t.progress(g).done) break;
+      placeAndRelease(g, x);
+      settle(g, t);
     }
+    if (!t.progress(g).done) settle(g, t, 10);
+    const ok = t.progress(g).done && !t.failed;
+    if (!ok) bad++;
+    replay = ok ? `rozwiązanie OK (${g.dropsUsed})` : `ROZWIĄZANIE NIE DZIAŁA${t.failed ? ` (${t.failed})` : ''}`;
   }
-  let gok = 0;
-  const gm: number[] = [];
-  for (let i = 0; i < 10; i++) {
-    const r = attempt(level, greedyBrain(), 100 + i);
-    if (r.ok) {
-      gok++;
-      gm.push(r.moves);
-    }
-  }
-  moves.sort((a, b) => a - b);
-  const med = moves.length ? moves[Math.floor(moves.length / 2)] : '-';
-  const min = moves.length ? moves[0] : '-';
-  const flag = ok / tries < 0.03 && gok === 0 ? '  ⚠ za trudne?' : ok / tries > 0.9 ? '  (bardzo łatwe)' : '';
-  console.log(
-    `${level.id.padEnd(9)} losowo ${String(Math.round((ok / tries) * 100)).padStart(3)}% (min ${min}, med ${med} ruchów)` +
-      `  greedy ${gok}/10${gm.length ? ` (med ${gm.sort((a, b) => a - b)[Math.floor(gm.length / 2)]})` : ''}` +
-      `  limit ${level.moves}, par ${level.par}${flag}`,
-  );
+  const rr = randomRate(level, tries);
+  const pct = rr.rate * 100;
+  const note = level.section === 'mistrz' && pct > 15 ? '  ⚠ za łatwe na mistrzowskie?' : !rr.path && !level.solution ? '  ⚠ brak dowodu rozwiązywalności' : '';
+  console.log(`${level.id.padEnd(10)} ${level.section === 'mistrz' ? 'M' : 'N'}  losowo ${pct.toFixed(1).padStart(5)}%  limit ${String(level.moves).padStart(2)} par ${String(level.par).padStart(2)}  ${replay}${note}`);
+}
+if (bad) {
+  console.error(`\n${bad} rozwiązań nie działa — uruchom npm run solve -- --level <id> i podmień solution/par`);
+  process.exit(1);
 }

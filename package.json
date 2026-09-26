@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "sim": "tsx scripts/sim.ts",
-    "orders": "tsx scripts/orders-check.ts"
+    "orders": "tsx scripts/orders-check.ts",
+    "solve": "tsx scripts/orders-solve.ts"
   },
   "devDependencies": {
     "tsx": "^4.23.15",

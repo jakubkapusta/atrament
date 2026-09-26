@@ -42,7 +42,8 @@ Ten plik jest źródłem prawdy dla kolejnych agentów: specyfikacja, architektu
 | Mętny      | jw. + woda mętnieje z każdą fuzją, wybuch czerni ją czyści             | ✅     |
 | Słój dnia  | 50 kropli z seeda daty (`prng` osobny od efektów), bez przegranej,     | ✅     |
 |            | 1 oficjalna próba/dzień + trening, seria dni, share: emoji-siatka słoja |        |
-| Zlecenia   | 12 poziomów (`src/game/orders.ts`), cel + limit ruchów, gwiazdki       | ✅     |
+| Zlecenia   | 12 „Nauka” + 12 „Mistrzowskie” (`src/game/orders.ts`), cel, zakazy,   | ✅     |
+|            | limit ruchów, gwiazdki; mistrzowskie od 8 ukończonych samouczków       |        |
 
 ### Ciecze (`src/game/liquids.ts`, odblokowanie liczbą odkryć w Atlasie)
 Woda (0), Olej (6: grawitacja 0.55, opór 4.2, bursztynowy odcień), Mleko (8: stała mętność,
@@ -136,15 +137,24 @@ tierów 0–2, duży promień wybuchu) nawet bot losowy nie przegrywał (limit 9
 Dlatego: krople 1.4× większe, rampa trudności (spawn tierów 0–3 przesuwa się w stronę
 dużych przez 160 kropel), mniejszy promień wybuchu, luźniejsze warunki złota/perły.
 
-## Zlecenia — weryfikacja (`npm run orders`)
-`scripts/orders-check.ts` rozgrywa każdy poziom setki razy losowymi pozycjami + botem greedy
-i raportuje odsetek sukcesów i ruchy. Po każdej zmianie fizyki/reguł uruchom i dopasuj
-`moves`/`par` (liczba ruchów w symulacji jest zawyżona o ~1–2, bo bot nie czeka na fuzje).
-Układ startowy (`setup`) musi składać się z kropli, które ze sobą nie reagują.
+## Zlecenia — projektowanie i weryfikacja
+- **Nauka** (1–12): każdy poziom uczy jednej reguły — celowo łatwe (losowy gracz 30–90%).
+- **Mistrzowskie** (13–24): nowe cele (`empty`, `have`, `combo`), zakazy (`forbid: mud/explode`
+  → natychmiastowa porażka), ciasne układy startowe (`setup` z opcjonalnym `y`).
+  Kryterium: istnieje rozwiązanie (`solution`), a *ostrożny losowy gracz* (czeka na spokój
+  w słoju, rzuca w losowe miejsce) wygrywa w ≤ ~13% prób (obecnie 0.7–13%).
+- `npm run solve -- --level <id> [--beam 20 --cands 21 --random 800]` — beam search na
+  prawdziwej fizyce (po każdej kropli czeka na spokój, ocenia `OrderTracker.value`), a gdy
+  nie znajdzie, bierze najkrótszą udaną ścieżkę z prób losowych. Wypisuje `solution` (3 miejsca
+  po przecinku — fizyka jest chaotyczna, zaokrąglenie do 2 psuje odtworzenie).
+- `npm run orders` — odtwarza zapisane rozwiązania (exit 1, gdy któreś nie działa) i liczy
+  odsetek losowych sukcesów. **Po każdej zmianie fizyki/reguł/TUNING uruchom i w razie
+  potrzeby przelicz rozwiązania.** `par` (3 gwiazdki) ≈ długość rozwiązania solvera.
+- Układ startowy musi składać się z kropli, które ze sobą nie reagują.
 
 ## Roadmapa (kolejność)
 1. Strojenie balansu po testach na telefonie (symulator powyżej).
-2. Więcej zleceń (np. z pryzmatem/rtęcią jako narzędziem), rotacja „zlecenia dnia”.
+2. Rotacja „zlecenia dnia” (losowy poziom mistrzowski z modyfikatorem), kolejne zlecenia.
 3. Osiągnięcia w Atlasie (kaskada ×5, pusty słój, 3 wybuchy naraz…).
 4. Obrazek do udostępniania (render słoja do canvas → plik PNG w Web Share).
 5. Wydajność na słabszych telefonach (niższa rozdzielczość płynu, mniej kroków ciśnienia).
