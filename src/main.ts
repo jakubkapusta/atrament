@@ -13,14 +13,33 @@ import '@fontsource/inter/latin-700.css';
 import '@fontsource/inter/latin-ext-700.css';
 import './style.css';
 
-import { Game, JAR_W, TUNING, type Mode } from './game/game';
-import { INKS, Ink, react } from './game/inks';
+import { Game, JAR_W, TUNING } from './game/game';
+import { INKS, Ink, SPECIAL, react } from './game/inks';
+import { LIQUIDS, type LiquidId } from './game/liquids';
+import { LEVELS, OrderTracker, goalText, setupFor, type Level } from './game/orders';
+import {
+  DAILY_DROPS, bestKey, dailyKey, dailySeed, dailyStreak, loadProfile, saveProfile, unlockedLiquids,
+} from './game/progress';
 import { chip } from './ui/chips';
+import { renderAtlas } from './ui/atlas';
+import { jarGrid, shareText } from './ui/share';
 import { Renderer, type UISlot } from './render/renderer';
 import { Audio } from './audio/audio';
 import { clamp, store } from './core/math';
 
 type State = 'menu' | 'starting' | 'play' | 'pause' | 'over';
+type Kind = 'classic' | 'murky' | 'daily' | 'order';
+interface Session {
+  kind: Kind;
+  liquid: LiquidId;
+  practice?: boolean; // daily jar replay that is not recorded
+  level?: Level;
+  dateKey?: string;
+}
+interface SaveData {
+  session: { kind: Kind; liquid: LiquidId; practice?: boolean; dateKey?: string };
+  game: ReturnType<Game['serialize']>;
+}
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>('gl');
@@ -39,16 +58,19 @@ try {
 
 const audio = new Audio();
 audio.setMuted(store.get('atrament.muted', false));
-let discovered: Ink[] = store.get('atrament.discovered', [] as Ink[]);
-const best: Record<string, number> = store.get('atrament.best', { classic: 0, murky: 0 });
+const profile = loadProfile();
+saveProfile(profile);
 
 let state: State = 'menu';
-let game = new Game('attract', undefined, discovered);
+let game = new Game('attract', { discovered: profile.discovered });
+let session: Session | null = null;
+let pending: Session | null = null;
+let tracker: OrderTracker | null = null;
+let winTimer = -1;
 let aiming = false;
 let aimPointer = -1;
 let keyDir = 0;
 let startTimer = 0;
-let pendingMode: Mode = 'classic';
 let overTimer = -1;
 
 // ---------------------------------------------------------------- UI helpers
@@ -60,20 +82,46 @@ const holdEl = $('hold');
 const nextEl = $('next');
 const popups = $('popups');
 const toast = $('toast');
-const screens = { menu: $('menu'), how: $('how'), pause: $('pause'), over: $('over') };
+const goalEl = $('goal');
+const screens = {
+  menu: $('menu'), how: $('how'), pause: $('pause'), over: $('over'),
+  orders: $('orders'), orderIntro: $('orderIntro'), atlas: $('atlas'),
+};
 
 function show(name: keyof typeof screens | null) {
   for (const [k, el] of Object.entries(screens)) el.classList.toggle('hidden', k !== name);
 }
 
+const WEEKDAYS = ['niedziela', 'poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota'];
+
 function refreshMenu() {
+  const liq = profile.liquid;
   document.querySelectorAll<HTMLElement>('[data-best]').forEach((el) => {
-    const v = best[el.dataset.best!] || 0;
+    const v = profile.best[bestKey(el.dataset.best!, liq)] || 0;
     el.textContent = v ? `rekord ${v}` : '';
   });
-  const saved = store.get<unknown>('atrament.save', null);
-  $('continueBtn').classList.toggle('hidden', !saved);
+  const saved = store.get<SaveData | null>('atrament.save', null);
+  const savedOk = !!saved && saved.session && (saved.session.kind !== 'daily' || saved.session.dateKey === dailyKey());
+  $('continueBtn').classList.toggle('hidden', !savedOk);
   document.querySelectorAll('.mute-toggle').forEach((b) => (b.textContent = `Dźwięk: ${audio.muted ? 'wył.' : 'wł.'}`));
+  // daily
+  const now = new Date();
+  $('dailyDate').textContent = `${WEEKDAYS[now.getDay()]} ${now.getDate()}.${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const today = profile.daily[dailyKey()];
+  const streak = dailyStreak(profile);
+  $('dailyStatus').textContent = today ? `✓ ${today.score}` : streak ? `seria ${streak} · zagraj` : 'zagraj';
+  // orders / atlas
+  const stars = LEVELS.reduce((a, l) => a + (profile.orders[l.id]?.stars ?? 0), 0);
+  $('ordersStat').textContent = `★ ${stars}/${LEVELS.length * 3}`;
+  $('atlasStat').textContent = `${profile.discovered.length}/13`;
+  // liquid
+  const open = unlockedLiquids(profile);
+  if (!open.includes(profile.liquid)) profile.liquid = 'water';
+  $('liqName').textContent = LIQUIDS[profile.liquid].name;
+  const i = open.indexOf(profile.liquid);
+  ($('liqPrev') as HTMLButtonElement).disabled = i <= 0;
+  ($('liqNext') as HTMLButtonElement).disabled = i >= open.length - 1;
+  $('liquidRow').classList.toggle('hidden', open.length < 2);
 }
 
 let lastScore = -1;
@@ -85,7 +133,15 @@ function updateHud() {
       setTimeout(() => scoreEl.classList.remove('bump'), 120);
     }
     lastScore = game.score;
-    bestEl.textContent = `rekord ${Math.max(best[game.mode] || 0, game.score)}`;
+  }
+  const s = session;
+  if (s?.kind === 'daily') bestEl.textContent = `kropla ${Math.min(game.dropsUsed + (game.current ? 1 : 0), DAILY_DROPS)} / ${DAILY_DROPS}`;
+  else if (s?.kind === 'order') bestEl.textContent = `ruch ${game.dropsUsed} / ${s.level!.moves}`;
+  else if (s) bestEl.textContent = `rekord ${Math.max(profile.best[bestKey(s.kind, s.liquid)] || 0, game.score)}`;
+  if (s?.kind === 'order' && tracker) {
+    const pr = tracker.progress(game);
+    goalEl.textContent = `${goalText(s.level!.goal)}${pr.text ? ` · ${pr.text}` : ''}`;
+    goalEl.classList.toggle('done', pr.done);
   }
   const c = game.combo;
   comboEl.classList.toggle('on', c >= 2);
@@ -177,44 +233,60 @@ rulesBtn.addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------- game flow
-function startGame(mode: Mode, restore = false) {
+let restoreData: ReturnType<Game['serialize']> | null = null;
+
+function startSession(next: Session, restore: ReturnType<Game['serialize']> | null = null) {
   audio.unlock();
   requestTilt();
-  pendingMode = mode;
+  pending = next;
+  restoreData = restore;
   show(null);
   hud.classList.remove('hidden');
+  goalEl.classList.toggle('hidden', next.kind !== 'order');
   slotCache = null;
-  if (restore) {
-    const saved = store.get<ReturnType<Game['serialize']> | null>('atrament.save', null);
-    if (saved) {
-      game.clearAll();
-      state = 'starting';
-      startTimer = 0.7;
-      restoreData = saved;
-      return;
-    }
-  }
-  restoreData = null;
   game.clearAll();
   state = 'starting';
   startTimer = 0.75;
 }
-let restoreData: ReturnType<Game['serialize']> | null = null;
+
+function buildGame(s: Session): Game {
+  const discovered = profile.discovered;
+  switch (s.kind) {
+    case 'daily': {
+      const seed = dailySeed(s.dateKey!);
+      return new Game('daily', { seed: seed + 1, pieceSeed: seed, dropLimit: DAILY_DROPS, noLose: true, discovered });
+    }
+    case 'order': {
+      const l = s.level!;
+      return new Game('order', {
+        seed: 4242, pieceSeed: l.seed ?? 1, dropLimit: l.moves, queue: l.queue, setup: setupFor(l),
+        liquid: l.liquid, murky: l.murky, discovered,
+      });
+    }
+    default:
+      return new Game(s.kind, { liquid: s.liquid, discovered });
+  }
+}
 
 function beginPlay() {
-  game = restoreData ? Game.restore(restoreData, discovered) : new Game(pendingMode, undefined, discovered);
+  session = pending!;
+  game = restoreData ? Game.restore(restoreData, profile.discovered) : buildGame(session);
   restoreData = null;
+  tracker = session.kind === 'order' ? new OrderTracker(session.level!) : null;
+  winTimer = -1;
   lastScore = -1;
   state = 'play';
   store.del('atrament.save');
   updateHud();
+  if (session.kind === 'order') showToast(goalText(session.level!.goal));
 }
 
 function toMenu() {
   if (state === 'play' || state === 'pause') save();
   state = 'menu';
+  session = null;
   hud.classList.add('hidden');
-  game = new Game('attract', undefined, discovered);
+  game = new Game('attract', { discovered: profile.discovered });
   show('menu');
   refreshMenu();
 }
@@ -235,39 +307,200 @@ function resume() {
 }
 
 function save() {
-  if (game.mode === 'attract' || game.over) return;
-  store.set('atrament.save', game.serialize());
+  saveProfile(profile);
+  if (!session || game.mode === 'attract' || game.over || session.kind === 'order') return;
+  const data: SaveData = {
+    session: { kind: session.kind, liquid: session.liquid, practice: session.practice, dateKey: session.dateKey },
+    game: game.serialize(),
+  };
+  store.set('atrament.save', data);
 }
 
-function onGameOver() {
-  const mode = game.mode;
-  const prev = best[mode] || 0;
-  const isBest = game.score > prev;
-  if (isBest) {
-    best[mode] = game.score;
-    store.set('atrament.best', best);
+function starsHtml(n: number) {
+  return [0, 1, 2].map((i) => (i < n ? '★' : '<span class="off">★</span>')).join('');
+}
+
+interface ResultOpts {
+  tag: string;
+  score: string;
+  newBest?: boolean;
+  stars?: number;
+  stats: string;
+  grid?: string;
+  primary: [string, () => void];
+  secondary?: [string, () => void];
+}
+let resultPrimary: () => void = () => undefined;
+let resultSecondary: () => void = () => undefined;
+
+function showResult(o: ResultOpts) {
+  $('overTag').textContent = o.tag;
+  $('finalScore').textContent = o.score;
+  $('newBest').classList.toggle('hidden', !o.newBest);
+  const st = $('stars');
+  st.classList.toggle('hidden', o.stars == null);
+  if (o.stars != null) st.innerHTML = starsHtml(o.stars);
+  $('stats').innerHTML = o.stats;
+  const grid = $('grid');
+  grid.classList.toggle('hidden', !o.grid);
+  grid.textContent = o.grid ?? '';
+  $('overPrimary').textContent = o.primary[0];
+  resultPrimary = o.primary[1];
+  const sec = $('overSecondary');
+  sec.classList.toggle('hidden', !o.secondary);
+  if (o.secondary) {
+    sec.textContent = o.secondary[0];
+    resultSecondary = o.secondary[1];
   }
+  overTimer = 1.6;
+}
+
+const stat = (v: string | number, label: string) => `<span><b>${v}</b>${label}</span>`;
+
+function dailyShareText(key: string, r: { score: number; combo: number; explosions: number; grid: string }) {
+  const [y, m, d] = key.split('-');
+  return `Atrament · Słój dnia ${d}.${m}.${y}\n${r.score} pkt · combo ×${r.combo} · wybuchy ${r.explosions}\n${r.grid}\n${location.origin}${location.pathname}`;
+}
+
+async function doShare(text: string) {
+  const res = await shareText(text);
+  if (res === 'copied') showToast('Skopiowano wynik do schowka');
+  else if (res === 'failed') showToast('Nie udało się udostępnić');
+}
+
+function showDailyStored() {
+  const key = dailyKey();
+  const r = profile.daily[key];
+  if (!r) return;
+  showResult({
+    tag: `słój dnia · ${key.split('-').reverse().slice(0, 2).join('.')}`,
+    score: String(r.score),
+    stats: stat(`×${r.combo}`, 'combo') + stat(r.explosions, 'wybuchy') + stat(dailyStreak(profile), 'seria dni'),
+    grid: r.grid,
+    primary: ['Udostępnij', () => void doShare(dailyShareText(key, r))],
+    secondary: ['Trening (bez zapisu)', () => startSession({ kind: 'daily', liquid: 'water', practice: true, dateKey: key })],
+  });
+  overTimer = 0.001;
+}
+
+function endSession(won: boolean) {
+  const s = session!;
+  profile.games++;
+  profile.bestCombo = Math.max(profile.bestCombo, game.bestCombo);
   store.del('atrament.save');
-  overTimer = 1.8;
-  $('finalScore').textContent = String(game.score);
-  $('newBest').classList.toggle('hidden', !isBest || game.score === 0);
-  $('stats').innerHTML = `<span><b>${game.dropsUsed}</b>kropel</span><span><b>×${game.bestCombo}</b>najlepsze combo</span>`;
+  const again = () => startSession({ ...s });
+  if (s.kind === 'classic' || s.kind === 'murky') {
+    const k = bestKey(s.kind, s.liquid);
+    const isBest = game.score > (profile.best[k] || 0) && game.score > 0;
+    if (isBest) profile.best[k] = game.score;
+    showResult({
+      tag: s.liquid === 'water' ? 'słój pełny' : `słój pełny · ${LIQUIDS[s.liquid].name.toLowerCase()}`,
+      score: String(game.score),
+      newBest: isBest,
+      stats: stat(game.dropsUsed, 'kropel') + stat(`×${game.bestCombo}`, 'najlepsze combo') + stat(game.explosions, 'wybuchy'),
+      primary: ['Jeszcze raz', again],
+    });
+  } else if (s.kind === 'daily') {
+    const r = { score: game.score, combo: game.bestCombo, explosions: game.explosions, grid: jarGrid(game.drops) };
+    if (!s.practice && !profile.daily[s.dateKey!]) profile.daily[s.dateKey!] = r;
+    showResult({
+      tag: `słój dnia${s.practice ? ' · trening' : ''}`,
+      score: String(r.score),
+      stats: stat(`×${r.combo}`, 'combo') + stat(r.explosions, 'wybuchy') + stat(dailyStreak(profile), 'seria dni'),
+      grid: r.grid,
+      primary: s.practice ? ['Jeszcze raz', again] : ['Udostępnij', () => void doShare(dailyShareText(s.dateKey!, r))],
+      secondary: s.practice ? undefined : ['Trening (bez zapisu)', () => startSession({ ...s, practice: true })],
+    });
+  } else if (s.kind === 'order') {
+    const l = s.level!;
+    const idx = LEVELS.indexOf(l);
+    if (won) {
+      const stars = tracker!.stars(game.dropsUsed);
+      const prev = profile.orders[l.id];
+      if (!prev || stars > prev.stars || (stars === prev.stars && game.dropsUsed < prev.moves)) {
+        profile.orders[l.id] = { stars: Math.max(stars, prev?.stars ?? 0), moves: Math.min(game.dropsUsed, prev?.moves ?? 999) };
+      }
+      const next = LEVELS[idx + 1];
+      showResult({
+        tag: `zlecenie ${idx + 1} wykonane`,
+        score: l.name,
+        stars,
+        stats: stat(`${game.dropsUsed}/${l.moves}`, 'ruchy') + stat(l.par, 'na 3 gwiazdki') + stat(game.score, 'pkt'),
+        primary: next ? ['Następne zlecenie', () => openOrder(next)] : ['Lista zleceń', openOrders],
+        secondary: ['Powtórz', again],
+      });
+    } else {
+      showResult({
+        tag: `zlecenie ${idx + 1} · nie tym razem`,
+        score: l.name,
+        stats: `<span>${goalText(l.goal)}</span>`,
+        primary: ['Spróbuj ponownie', again],
+        secondary: ['Lista zleceń', openOrders],
+      });
+    }
+  }
+  saveProfile(profile);
+}
+
+// ---------------------------------------------------------------- orders & atlas screens
+function openOrders() {
+  state = 'menu';
+  hud.classList.add('hidden');
+  if (game.mode !== 'attract') game = new Game('attract', { discovered: profile.discovered });
+  const list = $('orderList');
+  list.innerHTML = LEVELS.map((l, i) => {
+    const done = profile.orders[l.id];
+    const unlocked = i === 0 || !!profile.orders[LEVELS[i - 1].id];
+    return `<button class="order-tile${unlocked ? '' : ' locked'}" data-i="${i}" ${unlocked ? '' : 'disabled'}>
+      <span class="n">${i + 1}</span><span class="nm">${l.name}</span>
+      <span class="st">${unlocked ? starsHtml(done?.stars ?? 0) : '🔒'}</span></button>`;
+  }).join('');
+  list.querySelectorAll<HTMLButtonElement>('.order-tile').forEach((b) =>
+    b.addEventListener('click', () => {
+      audio.ui();
+      openOrder(LEVELS[+b.dataset.i!]);
+    }),
+  );
+  show('orders');
+}
+
+let introLevel: Level | null = null;
+function openOrder(l: Level) {
+  state = 'menu';
+  hud.classList.add('hidden');
+  if (game.mode !== 'attract') game = new Game('attract', { discovered: profile.discovered });
+  introLevel = l;
+  const i = LEVELS.indexOf(l);
+  $('oiNum').textContent = `zlecenie ${i + 1} z ${LEVELS.length}${l.liquid ? ` · ${LIQUIDS[l.liquid].name.toLowerCase()}` : ''}${l.murky ? ' · mętna woda' : ''}`;
+  $('oiName').textContent = l.name;
+  $('oiDesc').textContent = l.desc;
+  $('oiGoal').textContent = `${goalText(l.goal)} · limit ${l.moves} kropel`;
+  show('orderIntro');
+}
+
+function openAtlas() {
+  renderAtlas(profile, { grid: $('atlasGrid'), count: $('atlasCount'), liquids: $('atlasLiquids'), stats: $('atlasStats') });
+  show('atlas');
 }
 
 // ---------------------------------------------------------------- events from the simulation
 function processEvents() {
   const evs = game.events.splice(0);
   renderer.handleEvents(evs, game);
+  const live = game.mode !== 'attract';
   for (const e of evs) {
+    if (tracker && live) tracker.onEvent(e);
     switch (e.t) {
       case 'release':
         audio.release();
+        if (live) profile.drops++;
         break;
       case 'splash':
         audio.plop(e.r);
         break;
       case 'merge':
         audio.merge(e.tier, e.kind, e.combo);
+        if (live) profile.created[e.ink] = (profile.created[e.ink] ?? 0) + 1;
         if (game.mode !== 'attract') {
           popup(e.x, e.y + e.r * 0.2, `+${e.points}`, e.ink, e.kind === 'gold' || e.kind === 'opal' || e.kind === 'pearl', e.combo);
           vibrate(e.kind === 'black' ? 18 : 8);
@@ -275,6 +508,10 @@ function processEvents() {
         break;
       case 'explode':
         audio.explode(e.tier);
+        if (live) {
+          profile.biggestBlast = Math.max(profile.biggestBlast, e.tier);
+          if (e.tier >= 4) profile.created[Ink.MERCURY] = (profile.created[Ink.MERCURY] ?? 0) + 1;
+        }
         if (game.mode !== 'attract') {
           popup(e.x, e.y, `+${e.points}`, Ink.K, true, e.combo);
           vibrate([30, 40, 60]);
@@ -289,24 +526,48 @@ function processEvents() {
       case 'hold':
         audio.ui();
         break;
-      case 'discover':
-        if (!discovered.includes(e.ink)) {
-          discovered = [...discovered, e.ink];
-          store.set('atrament.discovered', discovered);
-        }
-        if (e.ink === Ink.GOLD || e.ink === Ink.OPAL || e.ink === Ink.PEARL) {
+      case 'discover': {
+        if (profile.discovered.includes(e.ink)) break;
+        const before = new Set(unlockedLiquids(profile));
+        profile.discovered = [...profile.discovered, e.ink];
+        saveProfile(profile);
+        if (SPECIAL.has(e.ink) || e.ink === Ink.K || e.ink === Ink.M) {
           audio.discover();
-          showToast(`<i style="background:${INKS[e.ink].css}"></i>Nowy atrament: <b>${INKS[e.ink].name}</b>`);
+          showToast(`${chip(e.ink)} Nowy atrament: <b>${INKS[e.ink].name}</b>`);
+        }
+        const fresh = unlockedLiquids(profile).find((id) => !before.has(id));
+        if (fresh) setTimeout(() => showToast(`Odblokowano ciecz: <b>${LIQUIDS[fresh].name}</b>`), 2800);
+        break;
+      }
+      case 'prism':
+        audio.discover();
+        if (live) {
+          profile.created[Ink.PRISM] = (profile.created[Ink.PRISM] ?? 0) + 1;
+          popup(e.x, e.y, `+${e.points} pryzmat`, e.ink, true);
+        }
+        break;
+      case 'swallow':
+        audio.impact(4);
+        if (live) popup(e.x, e.y, `+${e.points}`, Ink.MERCURY);
+        break;
+      case 'finish':
+        if (session && live) {
+          audio.discover();
+          endSession(!tracker || tracker.progress(game).done);
         }
         break;
       case 'gameover':
         audio.gameOver();
         vibrate([60, 60, 120]);
-        onGameOver();
+        if (session && live) endSession(false);
         break;
     }
   }
   if (game.drops.some((d) => d.ink === Ink.K && d.state === 0)) audio.fuse();
+  // orders: goal reached → short celebration, then finish
+  if (tracker && state === 'play' && !game.over) {
+    if (winTimer < 0 && tracker.progress(game).done) winTimer = 1.1;
+  }
 }
 
 // ---------------------------------------------------------------- input
@@ -368,26 +629,64 @@ $('pauseBtn').addEventListener('click', () => {
   pause();
 });
 
-document.querySelectorAll<HTMLButtonElement>('.mode').forEach((b) =>
+document.querySelectorAll<HTMLButtonElement>('.mode[data-mode]').forEach((b) =>
   b.addEventListener('click', () => {
     audio.unlock();
     audio.ui();
-    startGame(b.dataset.mode as Mode);
+    startSession({ kind: b.dataset.mode as Kind, liquid: profile.liquid });
   }),
 );
+$('dailyBtn').addEventListener('click', () => {
+  audio.unlock();
+  audio.ui();
+  const key = dailyKey();
+  if (profile.daily[key]) showDailyStored();
+  else startSession({ kind: 'daily', liquid: 'water', dateKey: key });
+});
+$('ordersBtn').addEventListener('click', () => {
+  audio.unlock();
+  audio.ui();
+  openOrders();
+});
+$('atlasBtn').addEventListener('click', () => {
+  audio.unlock();
+  audio.ui();
+  openAtlas();
+});
+$('oiStart').addEventListener('click', () => {
+  audio.ui();
+  if (introLevel) startSession({ kind: 'order', liquid: introLevel.liquid ?? 'water', level: introLevel });
+});
+const cycleLiquid = (dir: number) => {
+  const open = unlockedLiquids(profile);
+  const i = Math.max(0, open.indexOf(profile.liquid));
+  profile.liquid = open[Math.min(open.length - 1, Math.max(0, i + dir))];
+  saveProfile(profile);
+  audio.ui();
+  refreshMenu();
+};
+$('liqPrev').addEventListener('click', () => cycleLiquid(-1));
+$('liqNext').addEventListener('click', () => cycleLiquid(1));
 $('continueBtn').addEventListener('click', () => {
   audio.unlock();
-  const saved = store.get<{ mode: Mode } | null>('atrament.save', null);
-  if (saved) startGame(saved.mode, true);
+  const saved = store.get<SaveData | null>('atrament.save', null);
+  if (saved?.session) startSession({ ...saved.session }, saved.game);
 });
 $('howBtn').addEventListener('click', () => {
   audio.unlock();
   audio.ui();
   show('how');
 });
-document.querySelector('#how .back')!.addEventListener('click', () => {
+document.querySelectorAll('#how .back, #orders .back, #atlas .back').forEach((b) =>
+  b.addEventListener('click', () => {
+    audio.ui();
+    show('menu');
+    refreshMenu();
+  }),
+);
+document.querySelector('#orderIntro .back')!.addEventListener('click', () => {
   audio.ui();
-  show('menu');
+  openOrders();
 });
 document.querySelectorAll('.mute-toggle').forEach((b) =>
   b.addEventListener('click', () => {
@@ -404,15 +703,19 @@ $('resumeBtn').addEventListener('click', () => {
 $('restartBtn').addEventListener('click', () => {
   store.del('atrament.save');
   audio.ui();
-  startGame(game.mode === 'attract' ? 'classic' : game.mode);
+  if (session) startSession({ ...session, practice: session.kind === 'daily' ? true : session.practice });
 });
 $('menuBtn').addEventListener('click', () => {
   audio.ui();
   toMenu();
 });
-$('againBtn').addEventListener('click', () => {
+$('overPrimary').addEventListener('click', () => {
   audio.ui();
-  startGame(game.mode === 'attract' ? 'classic' : game.mode);
+  resultPrimary();
+});
+$('overSecondary').addEventListener('click', () => {
+  audio.ui();
+  resultSecondary();
 });
 $('overMenuBtn').addEventListener('click', () => {
   audio.ui();
@@ -458,16 +761,17 @@ if (debug) {
   Object.assign(window, {
     __r: renderer,
     __game: () => game,
+    __profile: profile,
     // run frames synchronously (for automated checks while the tab is throttled)
     __tick: (n = 1, dt = 1 / 60) => {
       for (let i = 0; i < n; i++) tick(dt);
     },
     // start a game (if needed) and drop n drops at pseudo-random positions
-    __drive: (n: number, seed = 1, mode: Mode = 'classic') => {
+    __drive: (n: number, seed = 1, mode: Kind = 'classic') => {
       let s = seed;
       const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
       if (state !== 'play') {
-        startGame(mode);
+        startSession({ kind: mode, liquid: profile.liquid, dateKey: dailyKey() });
         for (let i = 0; i < 60; i++) tick(1 / 60);
       }
       for (let i = 0; i < n; i++) {
@@ -498,12 +802,18 @@ function tick(dt: number) {
   if (running) game.update(dt);
   processEvents();
 
-  if (state === 'play' && game.over && overTimer > 0) {
-    overTimer -= dt;
-    if (overTimer <= 0) {
-      state = 'over';
-      hud.classList.add('hidden');
-      show('over');
+  if (winTimer > 0 && state === 'play') {
+    winTimer -= dt;
+    if (winTimer <= 0) game.finish();
+  }
+  if ((state === 'play' && game.over) || state === 'menu') {
+    if (overTimer > 0) {
+      overTimer -= dt;
+      if (overTimer <= 0) {
+        state = 'over';
+        hud.classList.add('hidden');
+        show('over');
+      }
     }
   }
 

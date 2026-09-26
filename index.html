@@ -20,6 +20,7 @@
         <div class="score-box">
           <div id="score">0</div>
           <div id="best">rekord 0</div>
+          <div id="goal" class="hidden"></div>
         </div>
         <div id="combo"></div>
         <div class="slots">
@@ -50,6 +51,11 @@
           <p class="tag">kropla po kropli</p>
         </div>
         <div class="card">
+          <button id="dailyBtn" class="daily-btn">
+            <span class="d-title">Słój dnia</span>
+            <span id="dailyDate" class="d-date"></span>
+            <span id="dailyStatus" class="d-status"></span>
+          </button>
           <div class="modes">
             <button class="mode" data-mode="classic">
               <strong>Klasyczny</strong>
@@ -61,6 +67,15 @@
               <small>woda mętnieje, czerń ją czyści</small>
               <em data-best="murky"></em>
             </button>
+          </div>
+          <div class="modes two">
+            <button id="ordersBtn" class="mode small-mode"><strong>Zlecenia</strong><em id="ordersStat"></em></button>
+            <button id="atlasBtn" class="mode small-mode"><strong>Atlas barw</strong><em id="atlasStat"></em></button>
+          </div>
+          <div id="liquidRow" class="liquid-row">
+            <button id="liqPrev" class="liq-arrow" aria-label="Poprzednia ciecz">‹</button>
+            <div class="liq-name"><small>ciecz</small><b id="liqName">Woda</b></div>
+            <button id="liqNext" class="liq-arrow" aria-label="Następna ciecz">›</button>
           </div>
           <button id="continueBtn" class="wide hidden">Kontynuuj grę</button>
           <div class="row">
@@ -100,12 +115,47 @@
 
       <section id="over" class="screen hidden">
         <div class="card">
-          <p class="tag">słój pełny</p>
+          <p id="overTag" class="tag">słój pełny</p>
           <div id="finalScore">0</div>
           <p id="newBest" class="hidden">nowy rekord!</p>
+          <div id="stars" class="stars hidden"></div>
           <div id="stats"></div>
-          <button id="againBtn" class="wide primary">Jeszcze raz</button>
+          <pre id="grid" class="grid hidden"></pre>
+          <button id="overPrimary" class="wide primary">Jeszcze raz</button>
+          <button id="overSecondary" class="wide hidden">Udostępnij</button>
           <button id="overMenuBtn" class="wide">Menu</button>
+        </div>
+      </section>
+
+      <section id="orders" class="screen hidden">
+        <div class="card list-card">
+          <h2>Zlecenia</h2>
+          <div id="orderList" class="order-list"></div>
+          <button class="wide back">Wróć</button>
+        </div>
+      </section>
+
+      <section id="orderIntro" class="screen hidden">
+        <div class="card">
+          <p id="oiNum" class="tag"></p>
+          <h2 id="oiName"></h2>
+          <p id="oiDesc" class="desc"></p>
+          <p id="oiGoal" class="goal-line"></p>
+          <button id="oiStart" class="wide primary">Start</button>
+          <button class="wide back">Wróć</button>
+        </div>
+      </section>
+
+      <section id="atlas" class="screen hidden">
+        <div class="card list-card atlas-card">
+          <h2>Atlas barw</h2>
+          <p id="atlasCount" class="tag"></p>
+          <div id="atlasGrid" class="atlas-grid"></div>
+          <h3>Ciecze</h3>
+          <div id="atlasLiquids" class="atlas-liquids"></div>
+          <h3>Rekordy</h3>
+          <div id="atlasStats" class="atlas-stats"></div>
+          <button class="wide back">Wróć</button>
         </div>
       </section>
       <div id="debug" class="hidden"></div>

@@ -101,7 +101,7 @@ export const WATER = HEAD + COMMON + `
 in vec2 vUv; out vec4 o;
 uniform sampler2D uBg, uDye, uWave;
 uniform vec4 uU2W, uW2U, uDyeMap, uAim;
-uniform vec3 uJar, uMurkCol;
+uniform vec3 uJar, uMurkCol, uTint;
 uniform float uDyeK, uTime, uMurk, uRayK;
 void main(){
   vec2 w = vUv * uU2W.xy + uU2W.zw;
@@ -124,7 +124,7 @@ void main(){
   vec3 col = texture(uBg, sw * uW2U.xy + uW2U.zw).rgb;
   if (water) {
     float depth = wl - w.y;
-    col *= exp(-vec3(0.085, 0.028, 0.02) * (0.5 + chord * 2.4));
+    col *= exp(-uTint * (0.5 + chord * 2.4));
     vec4 dye = texture(uDye, w * uDyeMap.xy + uDyeMap.zw);
     dye.rgb = 2.2 * (1.0 - exp(-dye.rgb / 2.2)); // soft cap: dense ink never goes pitch black
     float dyeAmt = dot(dye.rgb, vec3(0.3333));
@@ -214,26 +214,28 @@ layout(location=3) in vec4 iC; // colA mixT
 layout(location=4) in vec4 iD; // colB a0
 layout(location=5) in vec4 iE; // colF flash
 layout(location=6) in vec4 iF; // gold pearl opal fuse
+layout(location=7) in vec4 iG; // mercury prism - -
 uniform vec4 uW2U; uniform float uS;
 out vec2 vL; out float vR;
-flat out vec4 vB; flat out vec4 vC; flat out vec4 vD; flat out vec4 vE; flat out vec4 vF; flat out float vSeed;
+flat out vec4 vB; flat out vec4 vC; flat out vec4 vD; flat out vec4 vE; flat out vec4 vF; flat out vec4 vG; flat out float vSeed;
 void main(){
   float r = iA.z * (1.0 + iD.w);
   float ext = r * (uS + 0.5);
   vec2 wp = iA.xy + aQ * ext;
   vL = aQ * ext; vR = r;
-  vB = iB; vC = iC; vD = iD; vE = iE; vF = iF; vSeed = iA.w;
+  vB = iB; vC = iC; vD = iD; vE = iE; vF = iF; vG = iG; vSeed = iA.w;
   vec2 uv = wp * uW2U.xy + uW2U.zw;
   gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
 export const FIELD_FS = HEAD + COMMON + `
 in vec2 vL; in float vR;
-flat in vec4 vB; flat in vec4 vC; flat in vec4 vD; flat in vec4 vE; flat in vec4 vF; flat in float vSeed;
+flat in vec4 vB; flat in vec4 vC; flat in vec4 vD; flat in vec4 vE; flat in vec4 vF; flat in vec4 vG; flat in float vSeed;
 uniform float uS, uTime;
 layout(location=0) out vec4 o0;
 layout(location=1) out vec4 o1;
 layout(location=2) out vec4 o2;
+layout(location=3) out vec4 o3;
 void main(){
   vec2 q = vL;
   float len = length(q);
@@ -261,6 +263,7 @@ void main(){
   o0 = vec4(A * w2, w2);
   o1 = vec4(w, vR * w, vF.x * w2, vF.y * w2);
   o2 = vec4(vF.z * w2, vF.w * w2, vE.w * w2, vSeed * w2);
+  o3 = vec4(vG.x * w2, vG.y * w2, 0.0, 0.0);
 }`;
 
 // ------------------------------------------------------------------ drop shading
@@ -274,9 +277,9 @@ float softbox(vec3 r, vec3 dir, vec2 size, float soft){
   vec2 d = abs(p) - size;
   return 1.0 - smoothstep(-soft, soft, max(d.x, d.y));
 }
-vec3 envMap(vec3 r, vec2 tilt){
+vec3 envMap(vec3 r, vec2 tilt, float back){
   vec3 c = vec3(0.018, 0.018, 0.022) + vec3(0.025) * max(r.y, 0.0);
-  c += vec3(1.1, 1.06, 1.0) * smoothstep(0.15, -0.55, r.z) * 0.9;
+  c += vec3(1.1, 1.06, 1.0) * smoothstep(0.15 - (1.0 - back) * 0.8, -0.55 - (1.0 - back) * 0.4, r.z) * 0.9;
   vec3 k = normalize(vec3(-0.55 + tilt.x * 0.35, 0.62 + tilt.y * 0.35, 0.56));
   c += softbox(r, k, vec2(0.36, 0.22), 0.04) * vec3(42.0, 40.0, 37.0);
   vec3 s = normalize(vec3(0.82 + tilt.x * 0.25, 0.08, 0.52));
@@ -288,7 +291,7 @@ vec3 envMap(vec3 r, vec2 tilt){
 
 export const DROPS = HEAD + COMMON + ENV + `
 in vec2 vUv; out vec4 o;
-uniform sampler2D uScene, uF0, uF1, uF2, uDye, uWave;
+uniform sampler2D uScene, uF0, uF1, uF2, uF3, uDye, uWave;
 uniform vec4 uW2U, uU2W, uDyeMap;
 uniform vec3 uJar, uMurkCol;
 uniform vec2 uFT, uTilt;
@@ -322,7 +325,10 @@ void main(){
   vec4 f2 = texture(uF2, vUv);
   float ws = max(f0.a, 1e-7);
   vec3 A = f0.rgb / ws;
-  float gold = f1.z / ws, pearl = f1.w / ws, opal = f2.x / ws, fuse = f2.y / ws, flash = f2.z / ws, seed = f2.w / ws;
+  float gold = f1.z / ws, pearl = f1.w / ws, opal = f2.x / ws, fuse = f2.y / ws, seed = f2.w / ws;
+  float flash = f2.z / ws;
+  vec4 f3 = texture(uF3, vUv);
+  float mercury = f3.x / ws, prism = f3.y / ws;
 
   // refraction of what is behind (water, ink clouds, other drops' surroundings)
   vec2 refr = -n.xy * (0.18 + h * 0.55);
@@ -345,7 +351,7 @@ void main(){
   vec3 V = vec3(0.0, 0.0, 1.0);
   vec3 Rf = reflect(-V, n);
   float F = 0.025 + 0.975 * pow(max(1.0 - n.z, 0.0), 5.0);
-  vec3 env = envMap(Rf, uTilt);
+  vec3 env = envMap(Rf, uTilt, 1.0);
 
   if (gold > 0.01) {
     vec3 gc = vec3(1.0, 0.7, 0.26);
@@ -371,6 +377,31 @@ void main(){
     float fleck = smoothstep(0.72, 0.9, vnoise(op * 7.0 + 9.0));
     vec3 oc = vec3(0.78, 0.86, 0.94) * (0.5 + 0.45 * core) + fire * (mask * 1.6 + fleck * 1.2) * (0.5 + 0.6 * core);
     col = mix(col, oc, clamp(opal, 0.0, 1.0) * 0.95);
+  }
+  if (mercury > 0.01) {
+    // liquid mirror: dark chrome reflecting the studio, faint surface ripples
+    vec3 hc = vec3(0.8, 0.84, 0.9);
+    vec2 rp = n.xy + 0.035 * vec2(sin(w.y * 9.0 + uTime * 3.0), cos(w.x * 8.0 - uTime * 2.4));
+    vec3 Rm = reflect(vec3(0.0, 0.0, -1.0), normalize(vec3(rp, n.z)));
+    vec3 menv = envMap(Rm, uTilt, 0.0);
+    // horizon line of the studio reflected in the ball
+    float horizon = smoothstep(-0.05, 0.05, Rm.y);
+    vec3 mc = hc * mix(vec3(0.03), vec3(0.16), horizon) + menv * hc * 0.85;
+    mc = mix(mc, hc * 1.1, smoothstep(0.12, 0.0, n.z) * 0.8); // backlit rim
+    col = mix(col, mc, clamp(mercury, 0.0, 1.0));
+    flash *= 1.0 - 0.85 * clamp(mercury, 0.0, 1.0);
+    env = mix(env, menv, clamp(mercury, 0.0, 1.0));
+  }
+  if (prism > 0.01) {
+    // clear glass that splits the light into a moving spectrum
+    vec3 pb = texture(uScene, vUv + refr * uW2U.xy * 3.0).rgb;
+    float band = dot(n.xy, vec2(0.8, 0.6)) * 2.6 + uTime * 0.25 + seed * 3.0;
+    vec3 spec = 0.5 + 0.5 * cos(6.2831 * (band + vec3(0.0, 0.33, 0.67)));
+    spec *= spec;
+    vec3 pc = pb * (0.35 + 0.35 * core) + spec * (0.9 + 0.5 * (1.0 - core));
+    pc += vec3(1.3) * smoothstep(0.93, 1.0, fract(band * 1.5)) * (0.5 + 0.5 * core);
+    pc *= mix(0.25, 1.0, smoothstep(0.05, 0.35, n.z)); // crisp dark glass edge
+    col = mix(col, pc, clamp(prism, 0.0, 1.0));
   }
   col = mix(col, env, F);
   if (fuse > 0.01) {

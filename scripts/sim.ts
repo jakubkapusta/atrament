@@ -11,6 +11,7 @@
 
 import { Game, TUNING, setTierScale, type Mode } from '../src/game/game';
 import { Ink } from '../src/game/inks';
+import type { LiquidId } from '../src/game/liquids';
 import { greedyBrain, lookaheadBrain, placeAndRelease, randomBrain, type Brain } from '../src/game/ai';
 
 interface Opts {
@@ -20,11 +21,12 @@ interface Opts {
   seed: number;
   mode: Mode;
   cap: number;
+  liquid: LiquidId;
   verbose: boolean;
 }
 
 function parse(argv: string[]) {
-  const o: Opts = { games: 20, ai: 'greedy', think: 1.0, seed: 1, mode: 'classic', cap: 900, verbose: false };
+  const o: Opts = { games: 20, ai: 'greedy', think: 1.0, seed: 1, mode: 'classic', cap: 900, verbose: false, liquid: 'water' };
   const tune: Record<string, string> = {};
   let sweep: { key: string; values: string[] } | null = null;
   for (let i = 0; i < argv.length; i++) {
@@ -37,6 +39,7 @@ function parse(argv: string[]) {
       case '--seed': o.seed = +v; i++; break;
       case '--mode': o.mode = v as Mode; i++; break;
       case '--cap': o.cap = +v; i++; break;
+      case '--liquid': o.liquid = v as LiquidId; i++; break;
       case '-v': case '--verbose': o.verbose = true; break;
       case '--sweep': {
         const [key, list] = v.split('=');
@@ -85,7 +88,7 @@ interface Result {
 }
 
 function playOne(o: Opts, seed: number): Result {
-  const g = new Game(o.mode, seed);
+  const g = new Game(o.mode, { seed, liquid: o.liquid });
   g.fx = false;
   const brain = makeBrain(o.ai, seed);
   const r: Result = { drops: 0, seconds: 0, score: 0, explosions: 0, bestCombo: 0, mud: 0, gold: 0, opal: 0, pearl: 0, capped: false };
@@ -159,7 +162,7 @@ function run(o: Opts, label: string) {
 
 const { o, tune, sweep } = parse(process.argv.slice(2));
 applyTuning(tune);
-console.log(`AI=${o.ai} tryb=${o.mode} gier=${o.games} myślenie=${o.think}s  TUNING=${JSON.stringify(TUNING)}`);
+console.log(`AI=${o.ai} tryb=${o.mode} ciecz=${o.liquid} gier=${o.games} myślenie=${o.think}s  TUNING=${JSON.stringify(TUNING)}`);
 if (sweep) {
   for (const v of sweep.values) {
     applyTuning({ [sweep.key]: v });

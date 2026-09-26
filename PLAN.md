@@ -18,32 +18,36 @@ Ten plik jest źródłem prawdy dla kolejnych agentów: specyfikacja, architektu
 | podstawowy + sąsiedni pochodny (np. B+G)     | brak reakcji (odbijają się)             |
 | K + K                                        | większa K, lont częściowo resetowany    |
 
-- Pojawiają się tylko kolory podstawowe, tiery 0–2.
+- Pojawiają się tylko kolory podstawowe; tiery 0–3 z rampą trudności (`TUNING`).
 - Wybuch K usuwa krople w promieniu zależnym od tieru (także muł), fala propaguje się
   (usuwanie z opóźnieniem ∝ odległość), dalsze krople dostają impuls → kaskady.
 - Combo: reakcje w odstępie < 1.6 s zwiększają mnożnik.
-- Fuzja dwóch kropli max tieru → Perła.
+- Fuzja dwóch kropli tego samego koloru na tierze `TUNING.pearlTier` (4) → Perła.
 
-### Rzadkie atramenty (Atlas barw)
-- **Złoto** — potrójna fuzja (3 krople tego samego koloru i tieru w kontakcie naraz).
-  Łączy się z każdą kroplą tego samego tieru; wynik ma kolor tamtej kropli, punkty ×3.
-- **Opal** — reakcja w locie dwóch kropli odepchniętych wybuchem. Dżoker: z każdą kroplą
-  tego samego tieru daje czarną (bombę).
-- **Perła** — fuzja na max tierze. Lekka; dotykając mułu (dowolny tier) rozpuszcza go
-  (perła traci tier).
-- Plan: kilka ukrytych atramentów + rekordy („kaskada ×5”) w Atlasie.
+### Rzadkie atramenty (Atlas barw — 13 pozycji)
+- **Złoto** — potrójna fuzja (trzecia kropla w odległości `tripleSlack`). Łączy się z każdą
+  kroplą tego samego tieru; wynik ma kolor tamtej kropli, punkty ×3.
+- **Opal** — reakcja w locie dwóch kropli odepchniętych wybuchem. Z każdą kroplą swojego
+  tieru daje czerń.
+- **Perła** — dwie krople tego samego koloru na tierze 4. Lekka; rozpuszcza muł (dowolny tier).
+- **Rtęć** (ukryta) — zostaje po wybuchu czerni tieru ≥ 4. Połyka krople swojego tieru lub
+  mniejsze (4 ładunki), potem znika.
+- **Pryzmat** (ukryty) — R+Y+B tego samego tieru naraz. Dotykając kolorowej kropli
+  przemalowuje wszystkie krople jej tieru na jej kolor → masowe fuzje.
 
 ### Tryby
-| Tryb       | Presja                                                        | Status |
-|------------|---------------------------------------------------------------|--------|
-| Klasyczny  | przegrana po przepełnieniu (krople nad linią MAX > 2.8 s)     | ✅     |
-| Mętny      | jw. + woda mętnieje z każdą fuzją, wybuch czerni ją czyści    | ✅     |
-| Słój dnia  | stałe 50 kropli (seed z daty), bez przegranej, wynik do share | ⏳     |
-| Zlecenia   | gotowy układ + cel („duży fiolet w 15 ruchach”)               | ⏳     |
+| Tryb       | Presja / zasady                                                        | Status |
+|------------|------------------------------------------------------------------------|--------|
+| Klasyczny  | przegrana, gdy krople *leżące na stosie* są nad MAX > 2.8 s            | ✅     |
+| Mętny      | jw. + woda mętnieje z każdą fuzją, wybuch czerni ją czyści             | ✅     |
+| Słój dnia  | 50 kropli z seeda daty (`prng` osobny od efektów), bez przegranej,     | ✅     |
+|            | 1 oficjalna próba/dzień + trening, seria dni, share: emoji-siatka słoja |        |
+| Zlecenia   | 12 poziomów (`src/game/orders.ts`), cel + limit ruchów, gwiazdki       | ✅     |
 
-### Ciecze do odblokowania (⏳)
-Woda (domyślna), olej (lepki, wolny), mleko (słaba widoczność), nieważkość — zmieniają
-parametry fizyki (`gravityWater`, `drag`) i shader wody.
+### Ciecze (`src/game/liquids.ts`, odblokowanie liczbą odkryć w Atlasie)
+Woda (0), Olej (6: grawitacja 0.55, opór 4.2, bursztynowy odcień), Mleko (8: stała mętność,
+krople „przed” mlekiem słabiej widać), Nieważkość (10: grawitacja 0.16, mały opór).
+Wybór w menu (strzałki), rekordy osobno per ciecz (`bestKey`).
 
 ## Architektura
 
@@ -53,10 +57,15 @@ Deploy: `.github/workflows/deploy.yml` (GitHub Pages, push na `main`).
 
 ```
 src/
-  main.ts            — bootstrap, pętla, stany (menu/attract, gra, pauza, koniec), zapis stanu
+  main.ts            — bootstrap, pętla, sesje (klasyczna/mętna/dzienna/zlecenie), ekrany,
+                       wyniki, profil, zapis/wznowienie, ściąga kolorów
   core/math.ts       — RNG (mulberry32), pomocnicze
   game/inks.ts       — definicje atramentów (absorbancja Beer-Lambert), reguły reakcji
   game/ai.ts         — boty do symulacji balansu (random/greedy/lookahead)
+  game/liquids.ts    — parametry cieczy (fizyka + wygląd)
+  game/orders.ts     — definicje zleceń, cele, OrderTracker, gwiazdki
+  game/progress.ts   — profil gracza (localStorage `atrament.profile`): odkrycia, liczniki,
+                       rekordy, historia Słoja dnia, postęp zleceń, wybrana ciecz
   game/game.ts       — fizyka PBD kropli, fuzje, wybuchy, bąbelki, fala powierzchni,
                        pipeta (celowanie), punkty, eventy dla renderera/audio
   gl/gl.ts           — wrapper WebGL2 (programy, FBO, MRT, double-FBO)
@@ -68,7 +77,9 @@ src/
                        gry na splaty barwnika/prędkości, fale uderzeniowe
   render/label.ts    — tekstura nadruku na szkle (podziałka ml, MAX, logo) z Canvas2D
   audio/audio.ts     — syntezowane dźwięki WebAudio (plusk, fuzja, wybuch, bąbelki)
-  ui/hud.ts          — DOM: wynik, combo, sloty „następna/zapas”, ekrany, popupy
+  ui/chips.ts        — kolorowe „kropelki” CSS dla atramentów
+  ui/atlas.ts        — ekran Atlasu barw (kolekcja, ciecze, rekordy)
+  ui/share.ts        — emoji-siatka słoja + Web Share / schowek
 ```
 
 ### Potok renderowania (na klatkę)
@@ -95,16 +106,15 @@ src/
 Świat gry: wnętrze słoja x∈[0, 7.5], y∈[0, 11] (y w górę), woda do 9.5, linia MAX 8.6.
 Fizyka: stały krok 1/120 s, 3 podkroki, PBD. Płyn: domena = obszar wody.
 
-## Stan (v0.1)
-- [x] Rdzeń: fizyka, reguły, fuzje, wybuchy, kaskady, combo, złoto/opal/perła
-- [x] Tryby Klasyczny i Mętny, ekran końca gry, rekordy (localStorage)
-- [x] Pełny potok graficzny (powyżej), dźwięk, haptyka (Android), pauza, zapis/wznowienie
-- [x] Tryb „attract” w menu (AI wrzuca krople w tle)
-- [x] PWA: manifest + service worker (runtime cache) → działa offline po 1. wizycie
-- [x] Detale: rozbryzgi nad powierzchnią, fala powierzchni (1D), menisk, bąbelki
-  opływające krople, pył w wodzie adwekowany polem prędkości, kaustyki, promienie światła,
-  odbicie słoja w blacie i kolorowa kaustyka na stole, paralaksa (żyroskop/mysz),
-  wahadłowa pipeta z gumową gruszką (ściska się przy upuszczeniu), nadruk podziałki
+## Stan (v0.2)
+- [x] Rdzeń: fizyka, reguły, fuzje, wybuchy, kaskady, combo, 5 rzadkich atramentów
+- [x] Tryby Klasyczny, Mętny, Słój dnia, Zlecenia; ciecze; Atlas barw; profil i rekordy
+- [x] Ściąga kolorów w grze (przycisk z kołem barw: hover na desktopie, tap na telefonie);
+      gdy otwarta, krople reagujące z bieżącą pulsują
+- [x] Pełny potok graficzny, dźwięk, haptyka (Android), pauza, zapis/wznowienie
+- [x] Tryb „attract” w menu, PWA offline
+- [x] Detale: rozbryzgi, fala powierzchni, menisk, bąbelki, pył w wodzie, kaustyki,
+  promienie światła, odbicie w blacie, paralaksa, wahadłowa pipeta, nadruk podziałki
 
 ## Balans i symulacja (`npm run sim`)
 Parametry trudności są w `TUNING` (`src/game/game.ts`), boty w `src/game/ai.ts`,
@@ -126,16 +136,18 @@ tierów 0–2, duży promień wybuchu) nawet bot losowy nie przegrywał (limit 9
 Dlatego: krople 1.4× większe, rampa trudności (spawn tierów 0–3 przesuwa się w stronę
 dużych przez 160 kropel), mniejszy promień wybuchu, luźniejsze warunki złota/perły.
 
+## Zlecenia — weryfikacja (`npm run orders`)
+`scripts/orders-check.ts` rozgrywa każdy poziom setki razy losowymi pozycjami + botem greedy
+i raportuje odsetek sukcesów i ruchy. Po każdej zmianie fizyki/reguł uruchom i dopasuj
+`moves`/`par` (liczba ruchów w symulacji jest zawyżona o ~1–2, bo bot nie czeka na fuzje).
+Układ startowy (`setup`) musi składać się z kropli, które ze sobą nie reagują.
+
 ## Roadmapa (kolejność)
 1. Strojenie balansu po testach na telefonie (symulator powyżej).
-2. **Słój dnia**: seed = data (YYYY-MM-DD), 50 kropli, wynik + udostępnianie
-   (miniatura słoja → canvas → Web Share API / schowek).
-3. **Atlas barw**: ekran kolekcji (odkryte atramenty już zapisywane w `atrament.discovered`),
-   ukryte atramenty, osiągnięcia.
-4. **Zlecenia**: format poziomu JSON (układ startowy, kolejka, cel, limit ruchów).
-5. **Ciecze**: parametry fizyki + warianty shadera wody; odblokowanie z Atlasu.
-6. Wydajność: auto-skalowanie jakości już jest (renderScale); ewentualnie niższa
-   rozdzielczość płynu na słabych GPU.
+2. Więcej zleceń (np. z pryzmatem/rtęcią jako narzędziem), rotacja „zlecenia dnia”.
+3. Osiągnięcia w Atlasie (kaskada ×5, pusty słój, 3 wybuchy naraz…).
+4. Obrazek do udostępniania (render słoja do canvas → plik PNG w Web Share).
+5. Wydajność na słabszych telefonach (niższa rozdzielczość płynu, mniej kroków ciśnienia).
 
 ## Uruchamianie
 ```
@@ -144,7 +156,8 @@ npm run dev      # http://localhost:5194 (patrz .claude/launch.json) lub vite do
 npm run build    # dist/
 ```
 Debug: `?debug` w URL pokazuje FPS i skalę renderowania oraz wystawia na `window`:
-`__r` (Renderer), `__game()` (bieżąca gra), `__tick(n, dt)` — synchroniczne klatki
+`__r` (Renderer), `__game()` (bieżąca gra), `__profile`, `__drive(n, seed, kind)` (start sesji
+i n kropel w losowe miejsca), `__tick(n, dt)` — synchroniczne klatki
 (przydatne do automatycznych testów, gdy karta jest w tle i rAF jest wstrzymany).
 Przykład scenariusza: `__game().makeDrop(Ink, tier, x, y)` + `drops.push(...)` + `__tick(100)`.
 
@@ -157,5 +170,10 @@ Przykład scenariusza: `__game().makeDrop(Ink, tier, x, y)` + `drops.push(...)` 
 - Płyn: prędkość w texelach siatki/s; splaty są batchowane (24 na przebieg).
 - **GLSL na Androidzie**: `pow(x, y)` z ujemnym `x` daje NaN (czarne prostokąty) —
   używaj `sq()`/`p6()` z COMMON albo `max(x, 0.0)`. Nie nazywaj zmiennych `sq`.
+- W GLSL odwrócone argumenty `smoothstep(a, b, x)` z a > b są formalnie niezdefiniowane,
+  ale używane w wielu miejscach i działają na ANGLE/Adreno/Mali — przy dziwnych artefaktach
+  na nowym GPU sprawdź to w pierwszej kolejności.
+- Materiały specjalne kropli idą przez 4 bufory MRT pola (`uF0..uF3`) i atrybuty instancji
+  `iF` (złoto, perła, opal, lont) i `iG` (rtęć, pryzmat).
 - Wydajność: budżet pikseli 1.5 MP (dotyk) / 3.2 MP (desktop), auto-obniżanie `quality`,
   gdy średnia klatka > 24 ms.

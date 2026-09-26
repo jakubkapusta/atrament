@@ -9,7 +9,7 @@ import { clamp } from '../core/math';
 const FIELD_S = 1.28; // metaball influence radius (in drop radii)
 const FIELD_T = Math.pow(1 - 1 / (FIELD_S * FIELD_S), 3); // iso value at d = 1
 const DYE_L = WATER + 0.45; // fluid domain height (world)
-const INST_FLOATS = 24;
+const INST_FLOATS = 28;
 const MAX_INST = 160;
 
 interface Shock {
@@ -121,7 +121,7 @@ export class Renderer {
     this.instBuf = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instBuf);
     gl.bufferData(gl.ARRAY_BUFFER, this.inst.byteLength, gl.DYNAMIC_DRAW);
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       gl.enableVertexAttribArray(1 + i);
       gl.vertexAttribPointer(1 + i, 4, gl.FLOAT, false, INST_FLOATS * 4, i * 16);
       gl.vertexAttribDivisor(1 + i, 1);
@@ -195,7 +195,7 @@ export class Renderer {
       for (const t of this.field.texs) this.gl.deleteTexture(t);
       this.gl.deleteFramebuffer(this.field.fbo);
     }
-    this.field = g.mrt(rw * 0.5, rh * 0.5, 3);
+    this.field = g.mrt(rw * 0.5, rh * 0.5, 4);
     this.bloom = [];
     let bw = rw / 2;
     let bh = rh / 2;
@@ -286,7 +286,7 @@ export class Renderer {
   }
 
   handleEvents(events: GameEvent[], game: Game) {
-    const murky = game.mode === 'murky';
+    const murky = game.murky;
     for (const e of events) {
       switch (e.t) {
         case 'splash': {
@@ -344,6 +344,22 @@ export class Renderer {
           this.shakeV = Math.max(this.shakeV, 6 + e.tier * 2.5);
           break;
         }
+        case 'prism': {
+          const cols = [INKS[Ink.R].absorb, INKS[Ink.Y].absorb, INKS[Ink.B].absorb];
+          for (let i = 0; i < 9; i++) {
+            const ang = (i / 9) * Math.PI * 2;
+            this.velSplat(e.x + Math.cos(ang) * 0.4, e.y + Math.sin(ang) * 0.4, Math.cos(ang) * 6, Math.sin(ang) * 6, 0.35);
+            this.dyeSplat(e.x + Math.cos(ang) * 0.6, e.y + Math.sin(ang) * 0.6, cols[i % 3], 0.35, 0.22);
+          }
+          this.addShock(e.x, e.y, 5, 0.02, 0.8);
+          this.flash = Math.max(this.flash, 0.15);
+          break;
+        }
+        case 'swallow': {
+          this.dyeSplat(e.x, e.y, INKS[e.ink].absorb, 0.4, Math.min(e.r * 0.6, 0.5));
+          this.velSplat(e.x, e.y, 0, -2, e.r * 0.6);
+          break;
+        }
         case 'impact':
           if (e.speed > 4) this.shakeV = Math.max(this.shakeV, Math.min(3, e.speed * 0.25 * e.r));
           break;
@@ -391,6 +407,10 @@ export class Renderer {
     f[o + 21] = def.pearl ?? 0;
     f[o + 22] = def.opal ?? 0;
     f[o + 23] = fuseHeat;
+    f[o + 24] = def.mercury ?? 0;
+    f[o + 25] = def.prism ?? 0;
+    f[o + 26] = 0;
+    f[o + 27] = 0;
   }
 
   private buildInstances(game: Game, slots: UISlot[]) {
@@ -470,12 +490,14 @@ export class Renderer {
     const u2w = this.u2w;
     const tilt = [this.tilt.x, this.tilt.y];
     const jar = [JAR_W, JAR_H, WATER];
-    const murky = game.mode === 'murky';
+    const murky = game.murky;
 
     // --- fluid forcing from moving drops
     const fl = this.fluid;
-    fl.dissipation = murky ? 0.035 : 0.24;
+    const liq = game.liquid;
+    fl.dissipation = (murky ? 0.035 : 0.24) * liq.dyeFade;
     fl.dissipationA = murky ? 0.012 : 0.35;
+    fl.curlK = liq.curl;
     let budget = 20;
     for (const d of game.drops) {
       if (!d.inWater || d.state === 1) continue;
@@ -507,8 +529,8 @@ export class Renderer {
 
     const dyeMap = [1 / JAR_W, 1 / DYE_L, 0, 0];
     const dyeK = 2.1;
-    const murk = game.murk;
-    const murkCol = [0.62, 0.58, 0.5];
+    const murk = Math.min(1, game.murk + liq.haze);
+    const murkCol = liq.hazeCol;
     const p = this.p;
     gl.disable(gl.BLEND);
 
@@ -528,7 +550,7 @@ export class Renderer {
     p.water.use().setAll({
       uBg: this.bg.tex, uDye: fl.dye.read.tex, uWave: this.waveTex,
       uU2W: u2w, uW2U: w2u, uDyeMap: dyeMap, uAim: [game.releaseX(), hang.y - hang.r, aimAlpha, 0],
-      uJar: jar, uMurkCol: murkCol, uDyeK: dyeK, uTime: t, uMurk: murk, uRayK: 0.16,
+      uJar: jar, uMurkCol: murkCol, uDyeK: dyeK, uTime: t, uMurk: murk, uRayK: 0.16, uTint: liq.tint,
     });
     g.fullscreen();
 
@@ -571,11 +593,11 @@ export class Renderer {
     // --- drops shading
     g.bind(this.sceneB);
     p.drops.use().setAll({
-      uScene: this.sceneA.tex, uF0: this.field.texs[0], uF1: this.field.texs[1], uF2: this.field.texs[2],
+      uScene: this.sceneA.tex, uF0: this.field.texs[0], uF1: this.field.texs[1], uF2: this.field.texs[2], uF3: this.field.texs[3],
       uDye: fl.dye.read.tex, uWave: this.waveTex,
       uW2U: w2u, uU2W: u2w, uDyeMap: dyeMap, uJar: jar, uMurkCol: murkCol,
       uFT: [1 / this.field.w, 1 / this.field.h], uTilt: tilt,
-      uS: FIELD_S, uThr: FIELD_T, uTime: t, uDyeK: dyeK, uFront: murky ? 0.75 : 0.12, uMurk: murk,
+      uS: FIELD_S, uThr: FIELD_T, uTime: t, uDyeK: dyeK, uFront: murky ? 0.75 : liq.haze > 0 ? 0.5 : 0.12, uMurk: murk,
     });
     g.fullscreen();
 

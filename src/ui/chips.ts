@@ -12,6 +12,8 @@ export const INK_CLASS: Partial<Record<Ink, string>> = {
   [Ink.GOLD]: 'c-gold',
   [Ink.OPAL]: 'c-opal',
   [Ink.PEARL]: 'c-pearl',
+  [Ink.MERCURY]: 'c-mercury',
+  [Ink.PRISM]: 'c-prism',
 };
 
 /** Small CSS "drop" swatch for an ink. */

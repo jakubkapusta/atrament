@@ -1,5 +1,8 @@
-import { Ink, INKS, MAX_TIER, PRIMARIES, react, type Reaction } from './inks';
+import { Ink, INKS, MAX_TIER, PRIMARIES, isPrimary, isSecondary, react, type Reaction } from './inks';
+
+const isColor = (i: Ink) => isPrimary(i) || isSecondary(i);
 import { RNG, clamp } from '../core/math';
+import { LIQUIDS, type Liquid, type LiquidId } from './liquids';
 
 // ---- World constants (world units, y up; jar interior x∈[0,W], y∈[0,H]) ----
 export const JAR_W = 7.5;
@@ -53,7 +56,19 @@ const STEP = 1 / 120;
 const SUB = 3;
 const ITERS = 2;
 
-export type Mode = 'classic' | 'murky' | 'attract';
+export type Mode = 'classic' | 'murky' | 'attract' | 'daily' | 'order';
+
+export interface GameOptions {
+  seed?: number; // effects / reactions randomness
+  pieceSeed?: number; // sequence of drops (same for everyone in the daily jar)
+  dropLimit?: number; // after this many drops the game finishes once the jar settles
+  noLose?: boolean; // overflowing the MAX line does not end the game
+  queue?: Piece[]; // fixed sequence of drops (cycled)
+  setup?: { ink: Ink; tier: number; x: number; y: number }[];
+  liquid?: LiquidId;
+  murky?: boolean; // murky water rules outside the Murky mode (orders)
+  discovered?: Ink[];
+}
 
 export interface Drop {
   id: number;
@@ -95,6 +110,8 @@ export interface Drop {
   dissolveDelay: number;
   dissolveT: number;
   flash: number;
+  charges: number; // mercury: drops it can still swallow
+  supported: boolean; // resting on the floor or another drop (this step)
 }
 
 export interface Bubble {
@@ -117,6 +134,9 @@ export type GameEvent =
   | { t: 'discover'; ink: Ink }
   | { t: 'pop'; x: number; r: number }
   | { t: 'gameover'; score: number }
+  | { t: 'finish'; score: number }
+  | { t: 'prism'; x: number; y: number; tier: number; ink: Ink; count: number; points: number }
+  | { t: 'swallow'; x: number; y: number; r: number; ink: Ink; points: number }
   | { t: 'hold' };
 
 interface Merge {
@@ -135,8 +155,9 @@ export class Surface {
   h = new Float32Array(80);
   v = new Float32Array(80);
   readonly dx = JAR_W / 79;
+  c2 = 30; // wave speed²
   step(dt: number) {
-    const c2 = 30; // wave speed²
+    const c2 = this.c2;
     const { h, v, n, dx } = this;
     for (let i = 0; i < n; i++) {
       const l = h[i > 0 ? i - 1 : 1];
@@ -164,6 +185,14 @@ let nextId = 1;
 export class Game {
   mode: Mode;
   rng: RNG;
+  prng: RNG;
+  opts: GameOptions;
+  liquid: Liquid;
+  dropLimit: number;
+  finished = false;
+  private settleT = 0;
+  private endWait = 0;
+  explosions = 0;
   drops: Drop[] = [];
   bubbles: Bubble[] = [];
   spray: Bubble[] = []; // water droplets thrown above the surface by splashes
@@ -194,21 +223,46 @@ export class Game {
   fx = true;
   discovered: Set<Ink>;
 
-  constructor(mode: Mode, seed = (Math.random() * 2 ** 32) >>> 0, discovered: Ink[] = []) {
+  private generated = 0;
+
+  constructor(mode: Mode, opts: GameOptions = {}) {
     this.mode = mode;
+    this.opts = opts;
+    const seed = opts.seed ?? (Math.random() * 2 ** 32) >>> 0;
     this.rng = new RNG(seed);
-    this.discovered = new Set(discovered);
+    this.prng = new RNG(opts.pieceSeed ?? (seed ^ 0x9e3779b9));
+    this.discovered = new Set(opts.discovered ?? []);
+    this.liquid = LIQUIDS[opts.liquid ?? 'water'];
+    this.dropLimit = opts.dropLimit ?? Infinity;
+    this.surface.c2 = 30 * this.liquid.wave * this.liquid.wave;
+    for (const s of opts.setup ?? []) {
+      const d = this.makeDrop(s.ink, s.tier, s.x, s.y);
+      d.age = 2;
+      this.drops.push(d);
+    }
     for (let i = 0; i < 3; i++) this.queue.push(this.gen());
     this.current = this.queue.shift()!;
     this.queue.push(this.gen());
   }
 
   private gen(): Piece {
-    const early = this.dropsUsed < 6;
+    const fixed = this.opts.queue;
+    const i = this.generated++;
+    if (fixed && fixed.length) return { ...fixed[i % fixed.length] };
+    const early = i < 6;
     return {
-      ink: PRIMARIES[this.rng.int(3)],
-      tier: this.rng.weighted(early ? TUNING.earlyWeights : spawnWeightsAt(this.dropsUsed)),
+      ink: PRIMARIES[this.prng.int(3)],
+      tier: this.prng.weighted(early ? TUNING.earlyWeights : spawnWeightsAt(i)),
     };
+  }
+
+  get murky() {
+    return this.mode === 'murky' || !!this.opts.murky;
+  }
+
+  /** Drops still available (limited modes). */
+  dropsLeft() {
+    return this.dropLimit - this.dropsUsed;
   }
 
   // ---------------------------------------------------------------- input
@@ -249,14 +303,21 @@ export class Game {
     d.a2x = -0.12; // released drop snaps from elongated
     d.a2vx = 2.5;
     this.drops.push(d);
+    this.noteDiscovery(d.ink);
     this.events.push({ t: 'release', x: d.x, ink: d.ink, tier: d.tier });
     this.pip.squeeze = 1;
     this.pip.cooldown = 0.42;
     this.pip.grow = 0;
-    this.current = this.queue.shift()!;
-    this.queue.push(this.gen());
     this.holdUsed = false;
     this.dropsUsed++;
+    if (this.dropsUsed >= this.dropLimit) this.current = null;
+    else if (this.dropsLeft() === 1 && this.hold && this.queue.length === 0) {
+      this.current = this.hold;
+      this.hold = null;
+    } else {
+      this.current = this.queue.shift()!;
+      this.queue.push(this.gen());
+    }
     return true;
   }
 
@@ -287,6 +348,8 @@ export class Game {
       sx: 0, sy: 0, lx: 0, ly: 0,
       colA: ink, colB: ink, mixT: 1, seed: this.rng.next(), age: 0, state: 0,
       fuse: 0, blasted: 0, inWater: y < WATER, dissolveDelay: 0, dissolveT: 0, flash: 0,
+      charges: ink === Ink.MERCURY ? 4 : 0,
+      supported: false,
     };
   }
 
@@ -315,7 +378,7 @@ export class Game {
     }
     if (this.mode === 'attract') this.ai(dt);
     else this.checkDanger(dt);
-    if (this.mode === 'murky') this.murk = Math.max(0, this.murk - dt * 0.004);
+    if (this.murky) this.murk = Math.max(0, this.murk - dt * 0.004);
   }
 
   private updatePipette(dt: number) {
@@ -345,6 +408,7 @@ export class Game {
     for (const d of ds) {
       d.sx = 0;
       d.sy = 0;
+      d.supported = false;
     }
     for (let s = 0; s < SUB; s++) {
       for (const d of ds) {
@@ -355,8 +419,8 @@ export class Game {
         const wasIn = d.inWater;
         d.inWater = d.y - d.r * 0.3 < wl;
         if (d.inWater) {
-          d.vy -= G_WATER * INKS[d.ink].sink * h;
-          const k = Math.exp(-DRAG * h);
+          d.vy -= G_WATER * this.liquid.gravity * INKS[d.ink].sink * h;
+          const k = Math.exp(-this.liquid.drag * h);
           d.vx *= k;
           d.vy *= k;
           if (!wasIn && d.vy < -1) this.splash(d);
@@ -392,6 +456,8 @@ export class Game {
             b.y += ny * k * wb;
             const c2 = nx * nx - ny * ny;
             const s2 = 2 * nx * ny;
+            if (ny > 0.35) b.supported = true;
+            else if (ny < -0.35) a.supported = true;
             a.sx += k * wa * c2;
             a.sy += k * wa * s2;
             b.sx += k * wb * c2;
@@ -485,6 +551,7 @@ export class Game {
       const l = Math.hypot(nx, ny) || 1;
       nx /= l;
       ny /= l;
+      if (ny > 0.35) d.supported = true;
       const k = pen * 0.5;
       d.sx -= k * (nx * nx - ny * ny) * -1;
       d.sy -= k * (2 * nx * ny) * -1;
@@ -586,6 +653,18 @@ export class Game {
           }
           continue;
         }
+        if (a.ink === Ink.MERCURY || b.ink === Ink.MERCURY) {
+          const m = a.ink === Ink.MERCURY ? a : b;
+          const o = m === a ? b : a;
+          if (o.ink !== Ink.MERCURY && o.tier <= m.tier) this.swallow(m, o);
+          continue;
+        }
+        if (a.ink === Ink.PRISM || b.ink === Ink.PRISM) {
+          const pr = a.ink === Ink.PRISM ? a : b;
+          const o = pr === a ? b : a;
+          if (isColor(o.ink)) this.refract(pr, o);
+          continue;
+        }
         if (a.tier !== b.tier) continue;
         let res = react(a.ink, b.ink, a.tier, TUNING.pearlTier);
         if (!res) continue;
@@ -596,6 +675,17 @@ export class Game {
             if (this.touching(c, a, TUNING.tripleSlack) || this.touching(c, b, TUNING.tripleSlack)) {
               group.push(c);
               res = { ink: Ink.GOLD, tier: Math.min(a.tier + 1, MAX_TIER), scoreMul: 4, kind: 'gold' };
+              break;
+            }
+          }
+        }
+        if (res.kind === 'mix') {
+          // the third primary of the same size close by → prism
+          for (const c of ds) {
+            if (c === a || c === b || c.state !== 0 || c.tier !== a.tier || !isPrimary(c.ink) || c.ink === a.ink || c.ink === b.ink) continue;
+            if (this.touching(c, a, TUNING.tripleSlack) || this.touching(c, b, TUNING.tripleSlack)) {
+              group.push(c);
+              res = { ink: Ink.PRISM, tier: a.tier, scoreMul: 5, kind: 'prism' };
               break;
             }
           }
@@ -669,15 +759,61 @@ export class Game {
       this.bestCombo = Math.max(this.bestCombo, this.combo);
       const points = Math.round(POINTS[res.tier] * res.scoreMul * this.combo);
       if (this.mode !== 'attract') this.score += points;
-      if (this.mode === 'murky') this.murk = Math.min(1, this.murk + 0.03 + res.tier * 0.01);
+      if (this.murky) this.murk = Math.min(1, this.murk + 0.03 + res.tier * 0.01);
       this.events.push({ t: 'merge', x: cx, y: cy, r: nd.rt, a: p0.ink, b: p1.ink, ink: res.ink, tier: res.tier, points, combo: this.combo, kind: res.kind });
       const nb = 2 + res.tier * 2;
       for (let i = 0; i < nb; i++) this.spawnBubble(cx + (this.rng.next() - 0.5) * nd.rt, cy + (this.rng.next() - 0.5) * nd.rt, 0.02 + this.rng.next() * 0.05);
-      if (!this.discovered.has(res.ink)) {
-        this.discovered.add(res.ink);
-        if (this.mode !== 'attract') this.events.push({ t: 'discover', ink: res.ink });
-      }
+      this.noteDiscovery(res.ink);
     }
+  }
+
+  private noteDiscovery(ink: Ink) {
+    if (this.discovered.has(ink)) return;
+    this.discovered.add(ink);
+    if (this.mode !== 'attract') this.events.push({ t: 'discover', ink });
+  }
+
+  private bumpCombo() {
+    if (this.comboT > 0) this.combo++;
+    else this.combo = 1;
+    this.comboT = 1.7;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
+  }
+
+  /** Mercury swallows a drop of its size or smaller. */
+  private swallow(m: Drop, o: Drop) {
+    if (o.state !== 0 || m.state !== 0) return;
+    this.beginDissolve(o, 0);
+    o.dissolveT = 0.5;
+    this.bumpCombo();
+    const points = Math.round(POINTS[o.tier] * 2 * this.combo);
+    if (this.mode !== 'attract') this.score += points;
+    m.charges--;
+    m.a0v += 3;
+    m.flash = 0.6;
+    this.events.push({ t: 'swallow', x: o.x, y: o.y, r: o.r, ink: o.ink, points });
+    if (m.charges <= 0) this.beginDissolve(m, 0.35);
+  }
+
+  /** Prism splits the light: every drop of the touched drop's size takes its colour. */
+  private refract(pr: Drop, o: Drop) {
+    if (pr.state !== 0 || o.state !== 0) return;
+    let count = 0;
+    for (const d of this.drops) {
+      if (d === pr || d.state !== 0 || d.tier !== o.tier || !isColor(d.ink) || d.ink === o.ink) continue;
+      d.colA = d.ink;
+      d.colB = o.ink;
+      d.ink = o.ink;
+      d.mixT = 0;
+      d.flash = 1;
+      d.a0v += 2.5;
+      count++;
+    }
+    this.beginDissolve(pr, 0);
+    this.bumpCombo();
+    const points = Math.round((40 + count * 25) * this.combo);
+    if (this.mode !== 'attract') this.score += points;
+    this.events.push({ t: 'prism', x: pr.x, y: pr.y, tier: o.tier, ink: o.ink, count, points });
   }
 
   private addScore(p: number, _x: number, _y: number) {
@@ -726,6 +862,16 @@ export class Game {
       const a = this.rng.next() * Math.PI * 2;
       const rr = this.rng.next() * R * 0.8;
       this.spawnBubble(d.x + Math.cos(a) * rr, d.y + Math.sin(a) * rr, 0.02 + this.rng.next() ** 2 * 0.12, Math.cos(a) * 3, Math.sin(a) * 3);
+    }
+    this.explosions++;
+    if (d.tier >= 4) {
+      // a really big blast leaves a bead of mercury behind
+      const hg = this.makeDrop(Ink.MERCURY, 2, clamp(d.x, TIER_R[2], JAR_W - TIER_R[2]), Math.max(d.y, TIER_R[2]));
+      hg.flash = 1;
+      hg.a0 = -0.3;
+      hg.a0v = 4;
+      this.drops.push(hg);
+      this.noteDiscovery(Ink.MERCURY);
     }
     this.events.push({ t: 'explode', x: d.x, y: d.y, R, tier: d.tier, points, combo: this.combo });
   }
@@ -871,12 +1017,34 @@ export class Game {
       if (d.state !== 0 || d.age < 1.2) continue;
       const top = d.y + d.r;
       near = Math.max(near, clamp((top - (DANGER - 1.6)) / 1.6, 0, 1));
-      if (top > DANGER && Math.hypot(d.vx, d.vy) < 2.5) above = true;
+      // only drops resting on the pile count — slowly sinking ones (oil, zero-g) don't
+      if (top > DANGER && d.supported && Math.abs(d.vy) < 0.6) above = true;
     }
     this.dangerNear = near;
     if (above) this.danger += dt / TUNING.dangerTime;
     else this.danger = Math.max(0, this.danger - dt / 1.2);
-    if (this.danger >= 1) this.gameOver();
+    if (this.danger >= 1) {
+      if (this.opts.noLose) this.danger = 1;
+      else this.gameOver();
+    }
+    // limited modes end once the last drop has settled
+    if (!this.over && this.current === null && this.dropsUsed >= this.dropLimit) {
+      this.endWait += dt;
+      const calm =
+        this.merges.length === 0 &&
+        this.drops.every((d) => d.state === 0 && d.ink !== Ink.K && Math.hypot(d.vx, d.vy) < 0.35);
+      this.settleT = calm ? this.settleT + dt : 0;
+      if (this.settleT > 1.2 || this.endWait > 12) this.finish();
+    }
+  }
+
+  /** Successful end (daily jar, order completed). */
+  finish() {
+    if (this.over) return;
+    this.over = true;
+    this.finished = true;
+    this.current = null;
+    this.events.push({ t: 'finish', score: this.score });
   }
 
   gameOver() {
@@ -941,9 +1109,11 @@ export class Game {
 
   /** Deep copy of the simulation state (for look-ahead AI); visual particles are dropped. */
   clone(): Game {
-    const g = new Game(this.mode, 1, [...this.discovered]);
+    const g = new Game(this.mode, { ...this.opts, setup: [], discovered: [...this.discovered] });
     g.fx = false;
     g.rng.s = this.rng.s;
+    g.prng.s = this.prng.s;
+    g.generated = this.generated;
     g.drops = this.drops.map((d) => ({ ...d }));
     const map = new Map(this.drops.map((d, i) => [d, g.drops[i]]));
     g.merges = this.merges.map((m) => ({ drops: m.drops.map((d) => map.get(d)!), res: m.res, t: m.t }));
@@ -962,6 +1132,7 @@ export class Game {
     g.acc = this.acc;
     g.murk = this.murk;
     g.over = this.over;
+    g.explosions = this.explosions;
     g.surface.h.set(this.surface.h);
     g.surface.v.set(this.surface.v);
     return g;
@@ -969,29 +1140,39 @@ export class Game {
 
   // ---------------------------------------------------------------- persistence
   serialize() {
+    const { setup: _setup, discovered: _disc, ...opts } = this.opts;
     return {
-      v: 1,
+      v: 2,
       mode: this.mode,
+      opts,
       score: this.score,
       rng: this.rng.s,
+      prng: this.prng.s,
+      generated: this.generated,
       queue: this.queue,
       current: this.current,
       hold: this.hold,
       dropsUsed: this.dropsUsed,
       murk: this.murk,
+      explosions: this.explosions,
+      bestCombo: this.bestCombo,
       drops: this.drops.filter((d) => d.state === 0).map((d) => ({ i: d.ink, t: d.tier, x: +d.x.toFixed(3), y: +d.y.toFixed(3), f: d.fuse })),
     };
   }
 
   static restore(data: ReturnType<Game['serialize']>, discovered: Ink[]): Game {
-    const g = new Game(data.mode, 1, discovered);
+    const g = new Game(data.mode, { ...(data.opts ?? {}), discovered });
     g.rng.s = data.rng;
+    if (data.prng != null) g.prng.s = data.prng;
+    g.generated = data.generated ?? 0;
     g.score = data.score;
     g.queue = data.queue;
     g.current = data.current;
     g.hold = data.hold;
     g.dropsUsed = data.dropsUsed;
     g.murk = data.murk ?? 0;
+    g.explosions = data.explosions ?? 0;
+    g.bestCombo = data.bestCombo ?? 0;
     for (const s of data.drops) {
       const d = g.makeDrop(s.i, s.t, s.x, s.y);
       d.fuse = s.f;
